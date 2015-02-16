@@ -53,6 +53,7 @@ func (s *Source) run() {
 		s.Close()
 	}()
 	if s.input, err = os.Open(s.path); err != nil {
+		log.Printf("Source %s error: %s", s.path, err)
 		return
 	}
 	defer s.input.Close()
@@ -61,6 +62,7 @@ func (s *Source) run() {
 		for framePos := uint64(0); framePos < s.frameBytes; {
 			var got int
 			if got, err = s.input.Read(s.frames[bufPos][framePos:]); err != nil {
+				log.Printf("Source %s error: %s", s.path, err)
 				return
 			}
 			framePos += uint64(got)
