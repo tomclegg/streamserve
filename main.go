@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"time"
 )
 
 type Config struct {
@@ -12,10 +13,13 @@ type Config struct {
 	FrameBytes      uint64
 	HeaderBytes     uint64
 	SourceBuffer    uint64
-	StatLogInterval float64
+	StatLogInterval time.Duration
 }
+var config Config
 
-func (c Config) LoadFlags() {
+func init() {
+	config = Config{}
+	c := &config
 	flag.StringVar(&c.Addr, "address", "0.0.0.0:80",
 		"Address to listen on: \"host:port\" where host and port can be names or numbers.")
 	flag.StringVar(&c.Path, "path", "/dev/stdin",
@@ -26,7 +30,7 @@ func (c Config) LoadFlags() {
 		"Size of header. A header is read from each source when it is opened, and delivered to each client before sending any data bytes.")
 	flag.Uint64Var(&c.SourceBuffer, "source-buffer", 64,
 		"Number of frames to keep in memory for each source. The smaller this buffer is, the sooner a slow client will miss frames.")
-	flag.Float64Var(&c.StatLogInterval, "stat-log-interval", 0,
+	flag.DurationVar(&c.StatLogInterval, "stat-log-interval", 0,
 		"Seconds between periodic statistics logs for each stream source, or 0 to disable.")
 }
 
@@ -44,8 +48,7 @@ func (c Config) Check() error {
 }
 
 func main() {
-	config := Config{}
-	config.LoadFlags()
+	flag.Parse()
 	if err := config.Check(); err != nil {
 		log.Fatalf("Invalid configuration: %s", err)
 	}

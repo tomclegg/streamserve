@@ -36,7 +36,7 @@ func NewSource(path string, c Config) (s *Source) {
 	}
 	s.frameBytes = c.FrameBytes
 	s.path = path
-	s.statLogInterval = time.Duration(c.StatLogInterval * 1000000000)
+	s.statLogInterval = c.StatLogInterval
 	return
 }
 
