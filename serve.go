@@ -43,9 +43,9 @@ func RunNewServer(c Config, listening chan<- string) error {
 		listening <- ln.Addr().String()
 	}
 	http.Handle("/", http.HandlerFunc(func (writer http.ResponseWriter, req *http.Request) {
-		var fwriter io.Writer = &FlushyResponseWriter{writer}
+		fwriter := &FlushyResponseWriter{writer}
 		label := "client#TODO"
-		err := NewSink(label, fwriter.(io.Writer), "/path/TODO", c).Run()
+		err := NewSink(label, fwriter, c.Path, c).Run()
 		log.Printf("Handler: %s %s", label, err)
 	}))
 	return srv.Serve(tcpKeepAliveListener{ln})
