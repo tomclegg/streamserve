@@ -20,7 +20,7 @@ func (sink *Sink) Run() (err error) {
 	defer func() {
 		log.Printf("Sink %s ends: %s elapsed %d bytes %d frames %d skipframes", sink.label, time.Since(startTime).String(), statBytes, statFrames, statSkips)
 	}()
-	var frame DataFrame
+	var frame DataFrame = make(DataFrame, sink.source.frameBytes)
 	var nextFrame uint64
 	for {
 		var nSkip uint64

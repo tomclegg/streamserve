@@ -106,7 +106,12 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 		*nextFrame = s.nextFrame - 1
 		nSkipped = lag
 	}
-	copy(frame[:], s.frames[*nextFrame%uint64(cap(s.frames))][:])
+	bufPos := *nextFrame%uint64(cap(s.frames))
+	if cap(frame) < len(s.frames[bufPos]) {
+		err = errors.New("Caller's frame buffer is too small.")
+		return
+	}
+	copy(frame, s.frames[bufPos])
 	s.Cond.L.Unlock()
 	s.Lock()
 	s.statBytesOut += s.frameBytes

@@ -38,35 +38,26 @@ func TestContentEqual(t *testing.T) {
 		FrameBytes:   65536,
 	})
 	nConsumers := 10
-	hashes := make([]chan uint64, nConsumers)
+	done := make(chan uint64)
 	tab := crc64.MakeTable(crc64.ECMA)
 	for i := 0; i < nConsumers; i++ {
-		hashes[i] = make(chan uint64)
-		go func(done chan<- uint64, whoami int) {
-			var anySkips bool
-			var frame DataFrame
-			var nextFrame uint64
+		go func() {
 			var hash uint64
+			defer func() { done <- hash }()
+			var frame = make(DataFrame, source.frameBytes)
+			var nextFrame uint64
 			for f := 0; f < 130; f++ {
-				var skips uint64
 				var err error
-				if skips, err = source.Next(&nextFrame, frame); err != nil {
+				if _, err = source.Next(&nextFrame, frame); err != nil {
 					t.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
-				}
-				if skips > 0 {
-					anySkips = true
 				}
 				hash = crc64.Update(hash, tab, frame)
 			}
-			if anySkips {
-				hash = 0
-			}
-			done <- hash
-		}(hashes[i], i)
+		}()
 	}
-	h0 := <-hashes[0]
+	h0 := <-done
 	for i := 1; i < nConsumers; i++ {
-		hi := <-hashes[i]
+		hi := <-done
 		if h0 == 0 {
 			h0 = hi
 		} else if hi != h0 {
