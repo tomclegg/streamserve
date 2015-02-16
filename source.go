@@ -22,6 +22,7 @@ type Source struct {
 	statBytesIn     uint64
 	statBytesOut    uint64
 	statLogInterval time.Duration
+	statLock        sync.Mutex
 }
 
 var sourceMap = make(map[string]*Source)
@@ -68,13 +69,15 @@ func (s *Source) run() {
 			framePos += uint64(got)
 		}
 		s.Lock()
-		s.statBytesIn += s.frameBytes
 		s.nextFrame += 1
+		s.Unlock()
+		s.statLock.Lock()
+		s.statBytesIn += s.frameBytes
 		if s.statLogInterval > 0 && time.Since(lastLog) >= s.statLogInterval {
 			log.Printf("Stats: %d in %d out", s.statBytesIn, s.statBytesOut)
 			lastLog = time.Now()
 		}
-		s.Unlock()
+		s.statLock.Unlock()
 		s.Cond.Broadcast()
 		runtime.Gosched()
 	}
@@ -93,9 +96,9 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 	defer func() {
 		s.Cond.L.Unlock()
 		if err != nil {
-			s.Lock()
+			s.statLock.Lock()
 			s.statBytesOut += s.frameBytes
-			s.Unlock()
+			s.statLock.Unlock()
 			*nextFrame += 1
 			runtime.Gosched()
 		}
