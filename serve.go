@@ -1,7 +1,6 @@
 package main
 
 import (
-	"io"
 	"log"
 	"net"
 	"net/http"
@@ -19,13 +18,13 @@ type FlushyResponseWriter struct {
 
 func (writer *FlushyResponseWriter) Write(data []byte) (int, error) {
 	defer func() {
-		if flusher, ok := writer.ResponseWriter.(http.Flusher); ok {
-			flusher.Flush()
-		} else {
-			log.Fatalf("ResponseWriter is not a flusher")
+		flusher, ok := writer.ResponseWriter.(http.Flusher)
+		if !ok {
+			log.Fatal("ResponseWriter is not a flusher")
 		}
+		flusher.Flush()
 	}()
-	return writer.Write(data)
+	return writer.ResponseWriter.Write(data)
 }
 
 func RunNewServer(c Config, listening chan<- string) error {
