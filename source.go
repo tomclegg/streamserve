@@ -90,6 +90,16 @@ func (s *Source) run() {
 // untouched and other return values undefined).
 func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err error) {
 	s.Cond.L.Lock()
+	defer func() {
+		s.Cond.L.Unlock()
+		if err != nil {
+			s.Lock()
+			s.statBytesOut += s.frameBytes
+			s.Unlock()
+			*nextFrame += 1
+			runtime.Gosched()
+		}
+	}()
 	for *nextFrame >= s.nextFrame && !s.gone {
 		// If we don't Unlock and GoSched here, performance goes awful.
 		s.Cond.L.Unlock()
@@ -98,9 +108,8 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 		// Theoretically, this should be enough:
 		s.Cond.Wait()
 	}
-	if s.gone {
+	if *nextFrame >= s.nextFrame {
 		err = errors.New("Read past end of stream")
-		s.Cond.L.Unlock()
 		return
 	}
 	lag := s.nextFrame - *nextFrame
@@ -114,12 +123,6 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 		return
 	}
 	copy(frame, s.frames[bufPos])
-	s.Cond.L.Unlock()
-	s.Lock()
-	s.statBytesOut += s.frameBytes
-	s.Unlock()
-	*nextFrame += 1
-	runtime.Gosched()
 	return
 }
 
