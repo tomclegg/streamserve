@@ -125,8 +125,8 @@ func benchSource(b *testing.B, nConsumers int, c Config) {
 	wg.Add(nConsumers)
 	for c := 0; c < nConsumers; c++ {
 		go func(c int) {
+			defer wg.Done()
 			consume(b, source, c)
-			wg.Done()
 		}(c)
 	}
 	wg.Wait()
@@ -134,7 +134,7 @@ func benchSource(b *testing.B, nConsumers int, c Config) {
 }
 
 func consume(b *testing.B, source *Source, label interface{}) {
-	var frame DataFrame
+	var frame DataFrame = make(DataFrame, source.frameBytes)
 	var nextFrame uint64
 	for i := uint64(0); i < 10*uint64(b.N); i++ {
 		if _, err := source.Next(&nextFrame, frame); err != nil {
