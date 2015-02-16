@@ -7,7 +7,7 @@ import (
 )
 
 type Config struct {
-	Listen          string
+	Addr            string
 	Path            string
 	FrameBytes      uint64
 	HeaderBytes     uint64
@@ -16,8 +16,8 @@ type Config struct {
 }
 
 func (c Config) LoadFlags() {
-	flag.StringVar(&c.Listen, "listen", "0.0.0.0:80",
-		"Address to listen on: \"host:port\"")
+	flag.StringVar(&c.Addr, "address", "0.0.0.0:80",
+		"Address to listen on: \"host:port\" where host and port can be names or numbers.")
 	flag.StringVar(&c.Path, "path", "/dev/stdin",
 		"Path to a source fifo, or a directory containing source fifos mapped onto the URI namespace.")
 	flag.Uint64Var(&c.FrameBytes, "frame-bytes", 64,
@@ -49,5 +49,7 @@ func main() {
 	if err := config.Check(); err != nil {
 		log.Fatalf("Invalid configuration: %s", err)
 	}
-	Serve(config)
+	listening := make(chan string)
+	go func() { log.Printf("Listening at %s", <-listening) }()
+	log.Fatal(RunNewServer(config, listening))
 }

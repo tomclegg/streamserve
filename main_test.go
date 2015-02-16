@@ -12,7 +12,7 @@ func TestConfigCheck(t *testing.T) {
 		SourceBuffer: 3,
 		FrameBytes:   1,
 		Path:         "/dev/stdin",
-		Listen:       "0.0.0.0:80",
+		Addr:         ":http",
 	}
 	var c Config
 	if c, c.SourceBuffer = ok, 0; c.Check() == nil {
