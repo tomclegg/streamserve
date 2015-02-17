@@ -4,12 +4,29 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"syscall"
 	"time"
 )
 
 type Server struct {
 	http.Server
 	config Config
+	listener *net.TCPListener
+	shutdown bool
+}
+
+func (srv *Server) runCtrlChannel(ctrl <-chan string) {
+	for cmd := range ctrl {
+		log.Print(cmd)
+		switch cmd {
+		case "shutdown":
+			log.Print("ctrl: shutting down")
+			srv.shutdown = true
+			srv.listener.Close()
+		default:
+			log.Fatalf("ctrl: unknown command '%s'", cmd)
+		}
+	}
 }
 
 type FlushyResponseWriter struct {
@@ -27,27 +44,54 @@ func (writer *FlushyResponseWriter) Write(data []byte) (int, error) {
 	return writer.ResponseWriter.Write(data)
 }
 
-func RunNewServer(c Config, listening chan<- string) error {
-	defer func() { listening <- "" }()
+func RunNewServer(c Config, listening chan<- string, ctrl <-chan string) (err error) {
+	// c.Check() is just for tests -- main() has already done this.
+	if err = c.Check(); err != nil {
+		log.Fatal(err)
+	}
+	defer func() {
+		if listening != nil {
+			listening <- ""
+		}
+	}()
 	srv := &Server{}
 	addr, err := net.ResolveTCPAddr("tcp", c.Addr)
 	if err != nil {
-		return err
+		return
 	}
-	ln, err := net.ListenTCP("tcp", addr)
+	srv.listener, err = net.ListenTCP("tcp", addr)
 	if err != nil {
-		return err
+		return
+	}
+	if ctrl != nil {
+		go srv.runCtrlChannel(ctrl)
 	}
 	if listening != nil {
-		listening <- ln.Addr().String()
+		listening <- srv.listener.Addr().String()
 	}
-	http.Handle("/", http.HandlerFunc(func (writer http.ResponseWriter, req *http.Request) {
+	mux := http.NewServeMux()
+	mux.HandleFunc("/", func (writer http.ResponseWriter, req *http.Request) {
 		fwriter := &FlushyResponseWriter{writer}
-		label := "client#TODO"
+		label := req.RemoteAddr
 		err := NewSink(label, fwriter, c.Path, c).Run()
-		log.Printf("Handler: %s %s", label, err)
-	}))
-	return srv.Serve(tcpKeepAliveListener{ln})
+		if e, ok := err.(*net.OpError); ok {
+			if e, ok := e.Err.(syscall.Errno); ok {
+				if e == syscall.ECONNRESET {
+					// Not really an error: client disconnected.
+					err = nil
+				}
+			}
+		}
+		if err != nil {
+			log.Printf("Handler: %s %s", label, err)
+		}
+	})
+	srv.Handler = mux
+	err = srv.Serve(tcpKeepAliveListener{srv.listener})
+	if srv.shutdown {
+		err = nil
+	}
+	return
 }
 
 // Copied from net/http because not exported.

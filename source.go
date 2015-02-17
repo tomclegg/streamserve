@@ -21,6 +21,7 @@ type Source struct {
 	*sync.Cond      // Control access to frames other than nextFrame
 	statBytesIn     uint64
 	statBytesOut    uint64
+	statLast        time.Time
 	statLogInterval time.Duration
 	statLock        sync.Mutex
 }
@@ -46,7 +47,7 @@ func NewSource(path string, c Config) (s *Source) {
 // sourceMap and return.
 func (s *Source) run() {
 	var err error
-	lastLog := time.Now()
+	s.statLast = time.Now()
 	defer func() {
 		if err != nil {
 			log.Printf("Source %s error: %s", s.path, err)
@@ -69,20 +70,32 @@ func (s *Source) run() {
 			framePos += uint64(got)
 		}
 		s.Lock()
+		if s.gone {
+			// Killed by CloseAllSources()
+			return
+		}
 		s.nextFrame += 1
 		s.Unlock()
 		s.statLock.Lock()
 		s.statBytesIn += s.frameBytes
-		if s.statLogInterval > 0 && time.Since(lastLog) >= s.statLogInterval {
-			log.Printf("Stats: %d in %d out", s.statBytesIn, s.statBytesOut)
-			lastLog = time.Now()
-		}
 		s.statLock.Unlock()
 		s.Cond.Broadcast()
 		runtime.Gosched()
+		s.LogStats(false)
 	}
 	log.Printf("Input channel closed for %s", s.path)
 	// TODO: Reopen
+	s.LogStats(true)
+}
+
+// If !really, only if statLogInterval says so.
+func (s *Source) LogStats(really bool) {
+	s.statLock.Lock()
+	defer s.statLock.Unlock()
+	if really || (s.statLogInterval > 0 && time.Since(s.statLast) >= s.statLogInterval) {
+		log.Printf("Stats: %d in %d out", s.statBytesIn, s.statBytesOut)
+		s.statLast = time.Now()
+	}
 }
 
 // Copy the next data frame into the given buffer and update the
@@ -138,6 +151,12 @@ func (s *Source) Close() {
 	s.gone = true
 	s.RWMutex.Unlock()
 	s.Broadcast()
+}
+
+func CloseAllSources() {
+	for _, src := range sourceMap {
+		src.Close()
+	}
 }
 
 // Return a Source for the given path (URI) and config (argv). At any

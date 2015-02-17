@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"hash/crc64"
+	"runtime"
 	"sync"
 	"testing"
 )
@@ -120,6 +121,7 @@ func BenchmarkSourceBigBuffer(b *testing.B) {
 }
 
 func benchSource(b *testing.B, nConsumers int, c Config) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	source := GetSource("/dev/zero", c)
 	wg := &sync.WaitGroup{}
 	wg.Add(nConsumers)
