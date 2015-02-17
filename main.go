@@ -15,6 +15,7 @@ type Config struct {
 	SourceBuffer    uint64
 	StatLogInterval time.Duration
 }
+
 var config Config
 
 func init() {

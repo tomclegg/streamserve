@@ -10,7 +10,7 @@ import (
 
 type Server struct {
 	http.Server
-	config Config
+	config   Config
 	listener *net.TCPListener
 	shutdown bool
 }
@@ -70,7 +70,7 @@ func RunNewServer(c Config, listening chan<- string, ctrl <-chan string) (err er
 		listening <- srv.listener.Addr().String()
 	}
 	mux := http.NewServeMux()
-	mux.HandleFunc("/", func (writer http.ResponseWriter, req *http.Request) {
+	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
 		fwriter := &FlushyResponseWriter{writer}
 		label := req.RemoteAddr
 		err := NewSink(label, fwriter, c.Path, c).Run()
