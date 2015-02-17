@@ -27,6 +27,7 @@ Features / design goals
 
 # TODO
 
+* Option to close source when last sink disconnects.
 * Multiple streams (pay attention to client URI).
 * Send source header to every client.
 * Better logging.
