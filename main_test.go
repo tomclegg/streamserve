@@ -65,7 +65,7 @@ func TestContentEqual(t *testing.T) {
 			t.Errorf("hash mismatch: h0=%x, h%d=%x", h0, i, hi)
 		}
 	}
-	source.Close()
+	CloseAllSources()
 }
 
 // 32s of CD audio, 1s per frame, 1000 consumers
@@ -132,7 +132,7 @@ func benchSource(b *testing.B, nConsumers int, c Config) {
 		}(c)
 	}
 	wg.Wait()
-	source.Close()
+	CloseAllSources()
 }
 
 func consume(b *testing.B, source *Source, label interface{}) {

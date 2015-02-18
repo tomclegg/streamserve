@@ -13,6 +13,7 @@ type Sink struct {
 }
 
 func (sink *Sink) Run() (err error) {
+	defer sink.source.Done()
 	var startTime = time.Now()
 	var statBytes uint64
 	var statFrames uint64

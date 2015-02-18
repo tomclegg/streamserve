@@ -4,6 +4,7 @@ import (
 	"errors"
 	"flag"
 	"log"
+	"runtime"
 	"time"
 )
 
@@ -14,6 +15,7 @@ type Config struct {
 	HeaderBytes     uint64
 	SourceBuffer    uint64
 	StatLogInterval time.Duration
+	CloseIdle       bool
 }
 
 var config Config
@@ -29,6 +31,8 @@ func init() {
 		"Size of a data frame. Only complete frames are sent to clients.")
 	flag.Uint64Var(&c.HeaderBytes, "header-bytes", 0,
 		"Size of header. A header is read from each source when it is opened, and delivered to each client before sending any data bytes.")
+	flag.BoolVar(&c.CloseIdle, "close-idle", false,
+		"Close an input FIFO if all of its clients disconnect. This stops whatever process is writing to the FIFO, which can be useful if that process consumes resources, but depends on that process to restart/resume reliably. The FIFO will reopen next time a client requests it.")
 	flag.Uint64Var(&c.SourceBuffer, "source-buffer", 64,
 		"Number of frames to keep in memory for each source. The smaller this buffer is, the sooner a slow client will miss frames.")
 	flag.DurationVar(&c.StatLogInterval, "stat-log-interval", 0,
@@ -49,6 +53,7 @@ func (c Config) Check() error {
 }
 
 func main() {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	flag.Parse()
 	if err := config.Check(); err != nil {
 		log.Fatalf("Invalid configuration: %s", err)

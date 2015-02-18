@@ -35,8 +35,8 @@ func TestServerListeningAddr(t *testing.T) {
 	<-listening
 }
 
-func BenchmarkServerGetZero(b *testing.B) {
-	devZeroToClients(*b, 32, b.N)
+func BenchmarkServer128ClientsGetZero(b *testing.B) {
+	devZeroToClients(*b, 128, b.N)
 }
 
 func devZeroToClients(b testing.B, nClients int, nBytesPerClient int) {

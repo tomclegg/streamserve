@@ -11,12 +11,14 @@ import (
 )
 
 type Source struct {
+	sinkCount       int
 	frames          []DataFrame
 	frameBytes      uint64
 	gone            bool
 	input           io.ReadCloser
 	nextFrame       uint64 // How many frames have ever been here
 	path            string
+	closeIdle       bool
 	sync.RWMutex    // Must be held while changing nextFrame or gone
 	*sync.Cond      // Control access to frames other than nextFrame
 	statBytesIn     uint64
@@ -39,6 +41,7 @@ func NewSource(path string, c Config) (s *Source) {
 	s.frameBytes = c.FrameBytes
 	s.path = path
 	s.statLogInterval = c.StatLogInterval
+	s.closeIdle = c.CloseIdle
 	return
 }
 
@@ -48,32 +51,25 @@ func NewSource(path string, c Config) (s *Source) {
 func (s *Source) run() {
 	var err error
 	s.statLast = time.Now()
-	defer func() {
-		if err != nil {
-			log.Printf("Source %s error: %s", s.path, err)
-		}
-		s.Close()
-	}()
 	if s.input, err = os.Open(s.path); err != nil {
 		log.Printf("Source %s error: %s", s.path, err)
 		return
 	}
 	defer s.input.Close()
-	for {
+	defer s.LogStats(true)
+	for !s.gone {
 		bufPos := s.nextFrame % uint64(cap(s.frames))
 		for framePos := uint64(0); framePos < s.frameBytes; {
 			var got int
 			if got, err = s.input.Read(s.frames[bufPos][framePos:]); err != nil {
 				log.Printf("Source %s error: %s", s.path, err)
+				// TODO: Reopen
+				s.Close()
 				return
 			}
 			framePos += uint64(got)
 		}
 		s.Lock()
-		if s.gone {
-			// Killed by CloseAllSources()
-			return
-		}
 		s.nextFrame += 1
 		s.Unlock()
 		s.statLock.Lock()
@@ -83,9 +79,6 @@ func (s *Source) run() {
 		runtime.Gosched()
 		s.LogStats(false)
 	}
-	log.Printf("Input channel closed for %s", s.path)
-	// TODO: Reopen
-	s.LogStats(true)
 }
 
 // If !really, only if statLogInterval says so.
@@ -142,15 +135,35 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 	return
 }
 
-// Remove the source from sourceMap.
-func (s *Source) Close() {
-	sourceMapMutex.Lock()
-	delete(sourceMap, s.path)
-	sourceMapMutex.Unlock()
-	s.RWMutex.Lock()
+func (s *Source) Done() {
+	s.sinkCount -= 1
+	if s.closeIdle {
+		s.CloseIfIdle()
+	}
+}
+
+// Make sure everyone waiting in Next() gives up. Prevents deadlock.
+func (s *Source) disconnectAll() {
 	s.gone = true
-	s.RWMutex.Unlock()
 	s.Broadcast()
+}
+
+func (s *Source) Close() {
+	s.closeIdle = true
+	s.disconnectAll()
+}
+
+func (s *Source) CloseIfIdle() {
+	didClose := false
+	sourceMapMutex.Lock()
+	if s.sinkCount == 0 {
+		delete(sourceMap, s.path)
+		didClose = true
+	}
+	sourceMapMutex.Unlock()
+	if didClose {
+		s.disconnectAll()
+	}
 }
 
 func CloseAllSources() {
@@ -161,20 +174,18 @@ func CloseAllSources() {
 
 // Return a Source for the given path (URI) and config (argv). At any
 // given time, there is at most one Source for a given path.
-func GetSource(path string, c Config) *Source {
-	sourceMapMutex.RLock()
-	if src, ok := sourceMap[path]; ok {
-		sourceMapMutex.RUnlock()
-		return src
-	}
-	sourceMapMutex.RUnlock()
+//
+// The caller must ensure Done() is eventually called, exactly once,
+// on the returned *Source.
+func GetSource(path string, c Config) (src *Source) {
 	sourceMapMutex.Lock()
 	defer sourceMapMutex.Unlock()
-	if src, ok := sourceMap[path]; ok {
-		return src
+	var ok bool
+	if src, ok = sourceMap[path]; !ok {
+		src = NewSource(path, c)
+		sourceMap[path] = src
+		go src.run()
 	}
-	src := NewSource(path, c)
-	sourceMap[path] = src
-	go src.run()
+	src.sinkCount += 1
 	return src
 }
