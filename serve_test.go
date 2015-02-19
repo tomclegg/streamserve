@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"net/http"
 	"regexp"
-	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -40,7 +39,6 @@ func BenchmarkServer128ClientsGetZero(b *testing.B) {
 }
 
 func devZeroToClients(b testing.B, nClients int, nBytesPerClient int) {
-	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	listening := make(chan string)
 	ctrl := make(chan string)
 	go func() {

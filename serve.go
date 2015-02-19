@@ -4,6 +4,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"runtime"
 	"syscall"
 	"time"
 )
@@ -49,6 +50,7 @@ func RunNewServer(c Config, listening chan<- string, ctrl <-chan string) (err er
 	if err = c.Check(); err != nil {
 		log.Fatal(err)
 	}
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(c.CpuMax))
 	defer func() {
 		if listening != nil {
 			listening <- ""

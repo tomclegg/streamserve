@@ -27,7 +27,6 @@ Features / design goals
 
 # TODO
 
-* -max-cpu option, default NumCPU
 * Multiple streams (pay attention to client URI).
 * Send source header to every client.
 * Better logging.
