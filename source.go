@@ -101,7 +101,7 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 	s.Cond.L.Lock()
 	defer func() {
 		s.Cond.L.Unlock()
-		if err != nil {
+		if err == nil {
 			s.statLock.Lock()
 			s.statBytesOut += s.frameBytes
 			s.statLock.Unlock()
