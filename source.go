@@ -7,6 +7,7 @@ import (
 	"os"
 	"runtime"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -26,7 +27,6 @@ type Source struct {
 	statBytesOut    uint64
 	statLast        time.Time
 	statLogInterval time.Duration
-	statLock        sync.Mutex
 }
 
 var sourceMap = make(map[string]*Source)
@@ -85,10 +85,8 @@ readframe:
 		s.Lock()
 		s.nextFrame += 1
 		s.Unlock()
-		s.statLock.Lock()
-		s.statBytesIn += s.frameBytes
-		s.statLock.Unlock()
 		s.Cond.Broadcast()
+		s.statBytesIn += s.frameBytes
 		s.LogStats(false)
 	}
 	if s.input != nil {
@@ -98,11 +96,9 @@ readframe:
 
 // If !really, only if statLogInterval says so.
 func (s *Source) LogStats(really bool) {
-	s.statLock.Lock()
-	defer s.statLock.Unlock()
 	if really || (s.statLogInterval > 0 && time.Since(s.statLast) >= s.statLogInterval) {
+		s.statLast.Add(s.statLogInterval)
 		log.Printf("Stats: %d in %d out", s.statBytesIn, s.statBytesOut)
-		s.statLast = time.Now()
 	}
 }
 
@@ -117,9 +113,7 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 	defer func() {
 		s.Cond.L.Unlock()
 		if err == nil {
-			s.statLock.Lock()
-			s.statBytesOut += s.frameBytes
-			s.statLock.Unlock()
+			atomic.AddUint64(&s.statBytesOut, s.frameBytes)
 			*nextFrame += 1
 		}
 	}()
