@@ -160,8 +160,11 @@ func consume(b *testing.B, source *Source, label interface{}) {
 	var frame DataFrame = make(DataFrame, source.frameBytes)
 	var nextFrame uint64
 	for i := uint64(0); i < 10*uint64(b.N); i++ {
-		if _, err := source.Next(&nextFrame, frame); err != nil && err != io.EOF {
-			b.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
+		if _, err := source.Next(&nextFrame, frame); err != nil {
+			if err != io.EOF {
+				b.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
+			}
+			break
 		}
 	}
 }

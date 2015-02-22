@@ -100,7 +100,7 @@ readframe:
 		bufPos := s.nextFrame % uint64(cap(s.frames))
 		for framePos := uint64(0); framePos < s.frameBytes; {
 			var got int
-			if got, err = s.input.Read(s.frames[bufPos][framePos:]); err != nil {
+			if got, err = s.input.Read(s.frames[bufPos][framePos:]); got <= 0 {
 				log.Printf("source %s read: %s", s.path, err)
 				s.input.Close()
 				s.input = nil
@@ -190,7 +190,7 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 			}
 		}
 		// s.nextFrame has lapped *nextFrame. Catch up.
-		delta := s.nextFrame - *nextFrame - 1
+		delta := s.nextFrame - *nextFrame - uint64(1)
 		nSkipped += delta
 		*nextFrame += delta
 	}
