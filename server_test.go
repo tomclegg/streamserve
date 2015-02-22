@@ -15,7 +15,7 @@ func TestServerListeningAddr(t *testing.T) {
 	listening := make(chan string)
 	ctrl := make(chan string)
 	go func() {
-		err := RunNewServer(Config{Addr: ":0", FrameBytes: 1, Path: "/dev/zero", SourceBuffer: 4}, listening, ctrl)
+		err := RunNewServer(&Config{Addr: ":0", FrameBytes: 1, Path: "/dev/zero", SourceBuffer: 4}, listening, ctrl)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -42,7 +42,7 @@ func devZeroToClients(b testing.B, nClients int, nBytesPerClient int) {
 	listening := make(chan string)
 	ctrl := make(chan string)
 	go func() {
-		err := RunNewServer(Config{Addr: ":0", FrameBytes: 2 << 11, Path: "/dev/zero", SourceBuffer: 2 << 11, StatLogInterval: time.Duration(1000000000)}, listening, ctrl)
+		err := RunNewServer(&Config{Addr: ":0", FrameBytes: 2 << 11, Path: "/dev/zero", SourceBuffer: 2 << 11, StatLogInterval: time.Duration(1000000000)}, listening, ctrl)
 		if err != nil {
 			b.Fatal(err)
 		}

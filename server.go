@@ -46,7 +46,7 @@ func (writer *FlushyResponseWriter) Write(data []byte) (int, error) {
 	return writer.ResponseWriter.Write(data)
 }
 
-func RunNewServer(c Config, listening chan<- string, ctrl <-chan string) (err error) {
+func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err error) {
 	// c.Check() is just for tests -- main() has already done this.
 	if err = c.Check(); err != nil {
 		log.Fatal(err)

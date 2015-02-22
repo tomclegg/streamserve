@@ -74,5 +74,5 @@ func main() {
 	}
 	listening := make(chan string)
 	go func() { log.Printf("Listening at %s", <-listening) }()
-	log.Fatal(RunNewServer(config, listening, nil))
+	log.Fatal(RunNewServer(&config, listening, nil))
 }

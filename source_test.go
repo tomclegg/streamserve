@@ -9,7 +9,7 @@ import (
 )
 
 func TestContentEqual(t *testing.T) {
-	source := GetSource("/dev/urandom", Config{
+	source := GetSource("/dev/urandom", &Config{
 		SourceBuffer: 32,
 		FrameBytes:   65536,
 	})
@@ -97,7 +97,7 @@ func BenchmarkSourceBigBuffer(b *testing.B) {
 
 func benchSource(b *testing.B, nConsumers int, c Config) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
-	source := GetSource("/dev/zero", c)
+	source := GetSource("/dev/zero", &c)
 	wg := &sync.WaitGroup{}
 	wg.Add(nConsumers)
 	for c := 0; c < nConsumers; c++ {

@@ -32,7 +32,7 @@ type Source struct {
 var sourceMap = make(map[string]*Source)
 var sourceMapMutex = sync.RWMutex{}
 
-func NewSource(path string, c Config) (s *Source) {
+func NewSource(path string, c *Config) (s *Source) {
 	s = &Source{}
 	s.Cond = sync.NewCond(s.RLocker())
 	s.frames = make([]DataFrame, c.SourceBuffer)
@@ -193,7 +193,7 @@ func CloseAllSources() {
 //
 // The caller must ensure Done() is eventually called, exactly once,
 // on the returned *Source.
-func GetSource(path string, c Config) (src *Source) {
+func GetSource(path string, c *Config) (src *Source) {
 	sourceMapMutex.Lock()
 	defer sourceMapMutex.Unlock()
 	var ok bool
