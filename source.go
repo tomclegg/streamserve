@@ -20,6 +20,7 @@ type Source struct {
 	path            string
 	closeIdle       bool
 	reopen          bool
+	bandwidth       uint64
 	sync.RWMutex    // Must be held while changing nextFrame or gone
 	*sync.Cond      // Control access to frames other than nextFrame
 	statBytesIn     uint64
@@ -43,6 +44,7 @@ func NewSource(path string, c Config) (s *Source) {
 	s.statLogInterval = c.StatLogInterval
 	s.closeIdle = c.CloseIdle
 	s.reopen = c.Reopen
+	s.bandwidth = c.SourceBandwidth
 	return
 }
 
@@ -62,6 +64,10 @@ func (s *Source) run() {
 	defer s.LogStats(true)
 	defer s.Close()
 	s.openInput()
+	var ticker *time.Ticker
+	if s.bandwidth > 0 {
+		ticker = time.NewTicker(time.Duration(uint64(1000000000)*s.frameBytes/s.bandwidth))
+	}
 readframe:
 	for !s.gone {
 		bufPos := s.nextFrame % uint64(cap(s.frames))
@@ -85,6 +91,9 @@ readframe:
 		s.Cond.Broadcast()
 		s.statBytesIn += s.frameBytes
 		s.LogStats(false)
+		if ticker != nil {
+			<-ticker.C
+		}
 	}
 	if s.input != nil {
 		s.input.Close()
