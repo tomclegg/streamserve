@@ -106,7 +106,6 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 			s.statBytesOut += s.frameBytes
 			s.statLock.Unlock()
 			*nextFrame += 1
-			runtime.Gosched()
 		}
 	}()
 	for *nextFrame >= s.nextFrame && !s.gone {
