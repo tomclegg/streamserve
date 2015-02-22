@@ -28,7 +28,6 @@ Features / design goals
 # TODO
 
 * Multiple streams (pay attention to client URI).
-* Send source header to every client.
 * Better logging.
 * MIME types.
 * Uplink.

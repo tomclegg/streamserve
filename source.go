@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bytes"
 	"errors"
 	"io"
 	"log"
@@ -15,6 +16,8 @@ type Source struct {
 	frames          []DataFrame
 	frameBytes      uint64
 	gone            bool
+	header          []byte
+	HeaderBytes     uint64
 	input           io.ReadCloser
 	nextFrame       uint64 // How many frames have ever been here
 	path            string
@@ -39,19 +42,41 @@ func NewSource(path string, c *Config) (s *Source) {
 	for i := range s.frames {
 		s.frames[i] = make(DataFrame, c.FrameBytes)
 	}
-	s.frameBytes = c.FrameBytes
-	s.path = path
-	s.statLogInterval = c.StatLogInterval
-	s.closeIdle = c.CloseIdle
-	s.reopen = c.Reopen
 	s.bandwidth = c.SourceBandwidth
+	s.closeIdle = c.CloseIdle
+	s.frameBytes = c.FrameBytes
+	s.HeaderBytes = c.HeaderBytes
+	s.path = path
+	s.reopen = c.Reopen
+	s.statLogInterval = c.StatLogInterval
 	return
 }
 
 func (s *Source) openInput() (err error) {
+	// Notify anyone waiting for the header to arrive
+	defer s.Cond.Broadcast()
 	if s.input, err = os.Open(s.path); err != nil {
 		log.Printf("source %s open: %s", s.path, err)
+		return
 	}
+	header := make([]byte, s.HeaderBytes)
+	for pos := uint64(0); pos < s.HeaderBytes; {
+		var got int
+		if got, err = s.input.Read(header[pos:]); got == 0 {
+			log.Printf("source %s read-header: %s", s.path, err)
+			s.input.Close()
+			return
+		}
+		pos += uint64(got)
+	}
+	if len(s.header) > 0 && bytes.Compare(header, s.header) != 0 {
+		log.Printf("header mismatch: old %v, new %v", s.header, header)
+		s.input.Close()
+		return
+	}
+	s.Cond.L.Lock()
+	s.header = header
+	s.Cond.L.Unlock()
 	return
 }
 
@@ -63,7 +88,9 @@ func (s *Source) run() {
 	s.statLast = time.Now()
 	defer s.LogStats(true)
 	defer s.Close()
-	s.openInput()
+	if err := s.openInput(); err != nil {
+		return
+	}
 	var ticker *time.Ticker
 	if s.bandwidth > 0 {
 		ticker = time.NewTicker(time.Duration(uint64(1000000000)*s.frameBytes/s.bandwidth))
@@ -106,6 +133,24 @@ func (s *Source) LogStats(really bool) {
 		s.statLast.Add(s.statLogInterval)
 		log.Printf("source %s stats: %d in %d out", s.path, s.statBytesIn, s.statBytesOut)
 	}
+}
+
+func (s *Source) GetHeader(buf []byte) (err error) {
+	s.Cond.L.Lock()
+	defer s.Cond.L.Unlock()
+	for uint64(len(s.header)) < s.HeaderBytes && !s.gone {
+		s.Cond.Wait()
+	}
+	if uint64(len(s.header)) < s.HeaderBytes {
+		err = io.EOF
+		return
+	}
+	if cap(buf) < len(s.header) {
+		err = errors.New("Caller's header buffer is too small.")
+		return
+	}
+	copy(buf, s.header)
+	return
 }
 
 // Copy the next data frame into the given buffer and update the

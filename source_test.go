@@ -1,12 +1,58 @@
 package main
 
 import (
+	"bytes"
 	"hash/crc64"
 	"io"
 	"runtime"
 	"sync"
 	"testing"
 )
+
+func TestHeader(t *testing.T) {
+	headerSize := uint64(64)
+	nClients := 5
+	sources := make(chan *Source, nClients)
+	for i := 0; i < nClients; i++ {
+		sources <- GetSource("/dev/urandom", &Config{
+			SourceBuffer: 5,
+			FrameBytes:   65536,
+			HeaderBytes:  headerSize,
+			CloseIdle:    true,
+		})
+	}
+	empty := make([]byte, headerSize)
+	var h0 []byte
+	for i := 0; i < nClients; i++ {
+		h := make([]byte, headerSize)
+		source := <-sources
+		err := source.GetHeader(h)
+		if err != nil {
+			t.Error(err)
+		} else if h0 == nil {
+			h0 = h
+		} else if bytes.Compare(h, h0) != 0 {
+			t.Errorf("Header mismatch: %v != %v", h0, h)
+		} else if bytes.Compare(h, empty) == 0 {
+			t.Error("Header appears uninitialized")
+		} else if uint64(len(h)) != headerSize {
+			t.Errorf("Header size mismatch: %d != %d", len(h), headerSize)
+		}
+		var frame = make(DataFrame, source.frameBytes)
+		var nextFrame uint64
+		for f := 0; f < 6; f++ {
+			var err error
+			if _, err = source.Next(&nextFrame, frame); err != nil {
+				if err != io.EOF {
+					t.Error(err)
+				}
+				break
+			}
+		}
+		source.Done()
+	}
+	CloseAllSources()
+}
 
 func TestContentEqual(t *testing.T) {
 	source := GetSource("/dev/urandom", &Config{
