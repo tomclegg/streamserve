@@ -32,6 +32,7 @@ func (sink *Sink) Run() (err error) {
 			return
 		}
 		sink.Write(header)
+		statBytes += uint64(len(header))
 	}
 	var frame DataFrame = make(DataFrame, sink.source.frameBytes)
 	var nextFrame uint64

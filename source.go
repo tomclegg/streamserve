@@ -77,6 +77,7 @@ func (s *Source) openInput() (err error) {
 	s.Cond.L.Lock()
 	s.header = header
 	s.Cond.L.Unlock()
+	s.statBytesIn += s.HeaderBytes
 	return
 }
 
@@ -149,6 +150,7 @@ func (s *Source) GetHeader(buf []byte) (err error) {
 		err = errors.New("Caller's header buffer is too small.")
 		return
 	}
+	atomic.AddUint64(&s.statBytesOut, s.HeaderBytes)
 	copy(buf, s.header)
 	return
 }
