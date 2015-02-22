@@ -181,21 +181,21 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 	if s.nextFrame > uint64(1) && *nextFrame == uint64(0) {
 		// New clients start out reading fresh frames.
 		*nextFrame = s.nextFrame - uint64(1)
-	}
-	s.Cond.L.Lock()
-	for *nextFrame >= s.nextFrame && !s.gone {
-		s.Cond.Wait()
-	}
-	s.Cond.L.Unlock()
-	if *nextFrame >= s.nextFrame {
-		err = io.EOF
-		return
-	}
-	if s.nextFrame >= *nextFrame + uint64(cap(s.frames)) {
+	} else if s.nextFrame >= *nextFrame + uint64(cap(s.frames)) {
 		// s.nextFrame has lapped *nextFrame. Catch up.
 		delta := s.nextFrame - *nextFrame - uint64(1)
 		nSkipped += delta
 		*nextFrame += delta
+	} else if *nextFrame >= s.nextFrame {
+		s.Cond.L.Lock()
+		for *nextFrame >= s.nextFrame && !s.gone {
+			s.Cond.Wait()
+		}
+		s.Cond.L.Unlock()
+		if *nextFrame >= s.nextFrame {
+			err = io.EOF
+			return
+		}
 	}
 	bufPos := *nextFrame % uint64(cap(s.frames))
 	s.frameLocks[bufPos].RLock()
