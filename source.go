@@ -5,7 +5,6 @@ import (
 	"io"
 	"log"
 	"os"
-	"runtime"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -82,9 +81,7 @@ readframe:
 			}
 			framePos += uint64(got)
 		}
-		s.Lock()
 		s.nextFrame += 1
-		s.Unlock()
 		s.Cond.Broadcast()
 		s.statBytesIn += s.frameBytes
 		s.LogStats(false)
@@ -109,43 +106,40 @@ func (s *Source) LogStats(really bool) {
 // data source is exhausted, return with err != nil (with frame
 // untouched and other return values undefined).
 func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err error) {
-	s.Cond.L.Lock()
 	defer func() {
-		s.Cond.L.Unlock()
 		if err == nil {
 			atomic.AddUint64(&s.statBytesOut, s.frameBytes)
 			*nextFrame += 1
 		}
 	}()
+	s.Cond.L.Lock()
 	for *nextFrame >= s.nextFrame && !s.gone {
-		// If we don't Unlock and GoSched here, performance goes awful.
-		s.Cond.L.Unlock()
-		runtime.Gosched()
-		s.Cond.L.Lock()
-		// Theoretically, this should be enough:
 		s.Cond.Wait()
 	}
+	s.Cond.L.Unlock()
 	if *nextFrame >= s.nextFrame {
 		err = io.EOF
 		return
 	}
-	lag := s.nextFrame - *nextFrame
-	if lag >= uint64(cap(s.frames)-1) {
-		*nextFrame = s.nextFrame - 1
-		if *nextFrame > 0 {
-			nSkipped = lag
+	for {
+		bufPos := *nextFrame % uint64(cap(s.frames))
+		if cap(frame) < len(s.frames[bufPos]) {
+			err = errors.New("Caller's frame buffer is too small.")
+			return
 		}
-		// else this is the client's first frame: don't count
-		// the initial fast-forward to the current stream
-		// position in the "skipped" stats.
+		if s.nextFrame < *nextFrame + uint64(cap(s.frames)) {
+			// If we haven't been lapped by s.nextFrame...
+			copy(frame, s.frames[bufPos])
+			if s.nextFrame < *nextFrame + uint64(cap(s.frames)) {
+				// If we _still_ haven't been lapped by s.nextFrame...
+				return
+			}
+		}
+		// s.nextFrame has lapped *nextFrame. Catch up.
+		delta := s.nextFrame - *nextFrame - 1
+		nSkipped += delta
+		*nextFrame += delta
 	}
-	bufPos := *nextFrame % uint64(cap(s.frames))
-	if cap(frame) < len(s.frames[bufPos]) {
-		err = errors.New("Caller's frame buffer is too small.")
-		return
-	}
-	copy(frame, s.frames[bufPos])
-	return
 }
 
 func (s *Source) Done() {
