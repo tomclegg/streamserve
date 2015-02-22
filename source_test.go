@@ -2,6 +2,7 @@ package main
 
 import (
 	"hash/crc64"
+	"io"
 	"runtime"
 	"sync"
 	"testing"
@@ -23,7 +24,7 @@ func TestContentEqual(t *testing.T) {
 			var nextFrame uint64
 			for f := 0; f < 130; f++ {
 				var err error
-				if _, err = source.Next(&nextFrame, frame); err != nil {
+				if _, err = source.Next(&nextFrame, frame); err != nil && err != io.EOF {
 					t.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
 				}
 				hash = crc64.Update(hash, tab, frame)

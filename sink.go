@@ -18,8 +18,9 @@ func (sink *Sink) Run() (err error) {
 	var statBytes uint64
 	var statFrames uint64
 	var statSkips uint64
+	log.Printf("Client %s starts", sink.label)
 	defer func() {
-		log.Printf("Sink %s ends: %s elapsed %d bytes %d frames %d skipframes", sink.label, time.Since(startTime).String(), statBytes, statFrames, statSkips)
+		log.Printf("Client %s ends with %s elapsed %d bytes %d frames %d skipframes", sink.label, time.Since(startTime).String(), statBytes, statFrames, statSkips)
 	}()
 	var frame DataFrame = make(DataFrame, sink.source.frameBytes)
 	var nextFrame uint64
@@ -29,7 +30,7 @@ func (sink *Sink) Run() (err error) {
 			return
 		}
 		if nSkip > 0 {
-			log.Printf("Sink %s skipped %d frames", sink.label, nSkip)
+			log.Printf("Client %s skips %d frames", sink.label, nSkip)
 			statSkips += nSkip
 		}
 		if _, err = sink.Write(frame); err != nil {

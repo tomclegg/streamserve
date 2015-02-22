@@ -118,7 +118,7 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 		s.Cond.Wait()
 	}
 	if *nextFrame >= s.nextFrame {
-		err = errors.New("Read past end of stream")
+		err = io.EOF
 		return
 	}
 	lag := s.nextFrame - *nextFrame

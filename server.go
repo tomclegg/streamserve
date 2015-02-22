@@ -2,6 +2,7 @@ package main
 
 import (
 	"log"
+	"io"
 	"net"
 	"net/http"
 	"runtime"
@@ -83,9 +84,12 @@ func RunNewServer(c Config, listening chan<- string, ctrl <-chan string) (err er
 					err = nil
 				}
 			}
+		} else if err == io.EOF {
+			// Not really an error.
+			err = nil
 		}
 		if err != nil {
-			log.Printf("Handler: %s %s", label, err)
+			log.Printf("Client %s error: %s", label, err)
 		}
 	})
 	srv.Handler = mux
