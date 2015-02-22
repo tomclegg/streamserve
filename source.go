@@ -19,6 +19,7 @@ type Source struct {
 	nextFrame       uint64 // How many frames have ever been here
 	path            string
 	closeIdle       bool
+	reopen          bool
 	sync.RWMutex    // Must be held while changing nextFrame or gone
 	*sync.Cond      // Control access to frames other than nextFrame
 	statBytesIn     uint64
@@ -42,6 +43,14 @@ func NewSource(path string, c Config) (s *Source) {
 	s.path = path
 	s.statLogInterval = c.StatLogInterval
 	s.closeIdle = c.CloseIdle
+	s.reopen = c.Reopen
+	return
+}
+
+func (s *Source) openInput() (err error) {
+	if s.input, err = os.Open(s.path); err != nil {
+		log.Printf("Source %s open: %s", s.path, err)
+	}
 	return
 }
 
@@ -51,21 +60,25 @@ func NewSource(path string, c Config) (s *Source) {
 func (s *Source) run() {
 	var err error
 	s.statLast = time.Now()
-	if s.input, err = os.Open(s.path); err != nil {
-		log.Printf("Source %s error: %s", s.path, err)
-		return
-	}
-	defer s.input.Close()
 	defer s.LogStats(true)
+	defer s.Close()
+	s.openInput()
+readframe:
 	for !s.gone {
 		bufPos := s.nextFrame % uint64(cap(s.frames))
 		for framePos := uint64(0); framePos < s.frameBytes; {
 			var got int
 			if got, err = s.input.Read(s.frames[bufPos][framePos:]); err != nil {
-				log.Printf("Source %s error: %s", s.path, err)
-				// TODO: Reopen
-				s.Close()
-				return
+				log.Printf("Source %s read: %s", s.path, err)
+				s.input.Close()
+				s.input = nil
+				if !s.reopen {
+					break readframe
+				} else if err = s.openInput(); err != nil {
+					continue readframe
+				} else {
+					break readframe
+				}
 			}
 			framePos += uint64(got)
 		}
@@ -78,6 +91,9 @@ func (s *Source) run() {
 		s.Cond.Broadcast()
 		runtime.Gosched()
 		s.LogStats(false)
+	}
+	if s.input != nil {
+		s.input.Close()
 	}
 }
 

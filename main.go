@@ -16,6 +16,7 @@ type Config struct {
 	SourceBuffer    uint64
 	CloseIdle       bool
 	CpuMax          int
+	Reopen          bool
 	StatLogInterval time.Duration
 }
 
@@ -38,6 +39,8 @@ func init() {
 		"Close an input FIFO if all of its clients disconnect. This stops whatever process is writing to the FIFO, which can be useful if that process consumes resources, but depends on that process to restart/resume reliably. The FIFO will reopen next time a client requests it.")
 	flag.IntVar(&c.CpuMax, "cpu-max", runtime.NumCPU(),
 		"Maximum OS procs/threads to use. This effectively limits CPU consumption to the given number of cores. The default is the number of CPUs reported by the system. If 0 is given, the default is used.")
+	flag.BoolVar(&c.Reopen, "reopen", true,
+		"Reopen and resume reading if an error is encountered while reading an input FIFO. Default is true. Use -reopen=false to disable.")
 	flag.DurationVar(&c.StatLogInterval, "stat-log-interval", 0,
 		"Seconds between periodic statistics logs for each stream source, or 0 to disable.")
 }
