@@ -89,7 +89,6 @@ readframe:
 		s.statBytesIn += s.frameBytes
 		s.statLock.Unlock()
 		s.Cond.Broadcast()
-		runtime.Gosched()
 		s.LogStats(false)
 	}
 	if s.input != nil {
