@@ -50,7 +50,7 @@ func NewSource(path string, c Config) (s *Source) {
 
 func (s *Source) openInput() (err error) {
 	if s.input, err = os.Open(s.path); err != nil {
-		log.Printf("Source %s open: %s", s.path, err)
+		log.Printf("source %s open: %s", s.path, err)
 	}
 	return
 }
@@ -74,7 +74,7 @@ readframe:
 		for framePos := uint64(0); framePos < s.frameBytes; {
 			var got int
 			if got, err = s.input.Read(s.frames[bufPos][framePos:]); err != nil {
-				log.Printf("Source %s read: %s", s.path, err)
+				log.Printf("source %s read: %s", s.path, err)
 				s.input.Close()
 				s.input = nil
 				if !s.reopen {
@@ -104,7 +104,7 @@ readframe:
 func (s *Source) LogStats(really bool) {
 	if really || (s.statLogInterval > 0 && time.Since(s.statLast) >= s.statLogInterval) {
 		s.statLast.Add(s.statLogInterval)
-		log.Printf("Stats: %d in %d out", s.statBytesIn, s.statBytesOut)
+		log.Printf("source %s stats: %d in %d out", s.path, s.statBytesIn, s.statBytesOut)
 	}
 }
 

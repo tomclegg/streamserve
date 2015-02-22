@@ -18,9 +18,9 @@ func (sink *Sink) Run() (err error) {
 	var statBytes uint64
 	var statFrames uint64
 	var statSkips uint64
-	log.Printf("Client %s starts", sink.label)
+	log.Printf("client %s start", sink.label)
 	defer func() {
-		log.Printf("Client %s ends with %s elapsed %d bytes %d frames %d skipframes", sink.label, time.Since(startTime).String(), statBytes, statFrames, statSkips)
+		log.Printf("client %s end with %s elapsed %d bytes %d frames %d skipframes", sink.label, time.Since(startTime).String(), statBytes, statFrames, statSkips)
 	}()
 	var frame DataFrame = make(DataFrame, sink.source.frameBytes)
 	var nextFrame uint64
@@ -30,7 +30,7 @@ func (sink *Sink) Run() (err error) {
 			return
 		}
 		if nSkip > 0 {
-			log.Printf("Client %s skips %d frames", sink.label, nSkip)
+			log.Printf("client %s skip %d frames", sink.label, nSkip)
 			statSkips += nSkip
 		}
 		if _, err = sink.Write(frame); err != nil {
@@ -42,6 +42,6 @@ func (sink *Sink) Run() (err error) {
 }
 
 // Return a new sink for the given source.
-func NewSink(label string, dst io.Writer, path string, c Config) *Sink {
-	return &Sink{label: label, source: GetSource(path, c), Writer: dst}
+func NewSink(label string, dst io.Writer, source *Source) *Sink {
+	return &Sink{label: label, source: source, Writer: dst}
 }

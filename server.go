@@ -74,9 +74,9 @@ func RunNewServer(c Config, listening chan<- string, ctrl <-chan string) (err er
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		src := GetSource(c.Path, c)
 		fwriter := &FlushyResponseWriter{writer}
-		label := req.RemoteAddr
-		err := NewSink(label, fwriter, c.Path, c).Run()
+		err := NewSink(req.RemoteAddr, fwriter, src).Run()
 		if e, ok := err.(*net.OpError); ok {
 			if e, ok := e.Err.(syscall.Errno); ok {
 				if e == syscall.ECONNRESET {
@@ -89,7 +89,7 @@ func RunNewServer(c Config, listening chan<- string, ctrl <-chan string) (err er
 			err = nil
 		}
 		if err != nil {
-			log.Printf("Client %s error: %s", label, err)
+			log.Printf("client %s error: %s", req.RemoteAddr, err)
 		}
 	})
 	srv.Handler = mux
