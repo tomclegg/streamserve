@@ -93,7 +93,7 @@ func (s *Source) run() {
 	}
 	var ticker *time.Ticker
 	if s.bandwidth > 0 {
-		ticker = time.NewTicker(time.Duration(uint64(1000000000)*s.frameBytes/s.bandwidth))
+		ticker = time.NewTicker(time.Duration(uint64(1000000000) * s.frameBytes / s.bandwidth))
 	}
 readframe:
 	for !s.gone {
@@ -181,10 +181,10 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 			err = errors.New("Caller's frame buffer is too small.")
 			return
 		}
-		if s.nextFrame < *nextFrame + uint64(cap(s.frames)) {
+		if s.nextFrame < *nextFrame+uint64(cap(s.frames)) {
 			// If we haven't been lapped by s.nextFrame...
 			copy(frame, s.frames[bufPos])
-			if s.nextFrame < *nextFrame + uint64(cap(s.frames)) {
+			if s.nextFrame < *nextFrame+uint64(cap(s.frames)) {
 				// If we _still_ haven't been lapped by s.nextFrame...
 				return
 			}
