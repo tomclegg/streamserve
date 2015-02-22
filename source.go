@@ -14,6 +14,7 @@ import (
 type Source struct {
 	sinkCount       int
 	frames          []DataFrame
+	frameLocks      []sync.RWMutex
 	frameBytes      uint64
 	gone            bool
 	header          []byte
@@ -38,6 +39,7 @@ var sourceMapMutex = sync.RWMutex{}
 func NewSource(path string, c *Config) (s *Source) {
 	s = &Source{}
 	s.Cond = sync.NewCond(s.RLocker())
+	s.frameLocks = make([]sync.RWMutex, c.SourceBuffer)
 	s.frames = make([]DataFrame, c.SourceBuffer)
 	for i := range s.frames {
 		s.frames[i] = make(DataFrame, c.FrameBytes)
@@ -81,6 +83,20 @@ func (s *Source) openInput() (err error) {
 	return
 }
 
+func (s *Source) readNextFrame() (err error) {
+	bufPos := s.nextFrame % uint64(cap(s.frames))
+	s.frameLocks[bufPos].Lock()
+	defer s.frameLocks[bufPos].Unlock()
+	for framePos := uint64(0); framePos < s.frameBytes; {
+		var got int
+		if got, err = s.input.Read(s.frames[bufPos][framePos:]); got <= 0 {
+			return
+		}
+		framePos += uint64(got)
+	}
+	return
+}
+
 // Read data from the given source into the buffer. If the source
 // reaches EOF and cannot be reopened, remove the source from
 // sourceMap and return.
@@ -96,24 +112,18 @@ func (s *Source) run() {
 	if s.bandwidth > 0 {
 		ticker = time.NewTicker(time.Duration(uint64(1000000000) * s.frameBytes / s.bandwidth))
 	}
-readframe:
 	for !s.gone {
-		bufPos := s.nextFrame % uint64(cap(s.frames))
-		for framePos := uint64(0); framePos < s.frameBytes; {
-			var got int
-			if got, err = s.input.Read(s.frames[bufPos][framePos:]); got <= 0 {
-				log.Printf("source %s read: %s", s.path, err)
-				s.input.Close()
-				s.input = nil
-				if !s.reopen {
-					break readframe
-				} else if err = s.openInput(); err != nil {
-					continue readframe
-				} else {
-					break readframe
-				}
+		if err = s.readNextFrame(); err != nil {
+			log.Printf("source %s read: %s", s.path, err)
+			s.input.Close()
+			s.input = nil
+			if !s.reopen {
+				break
+			} else if err = s.openInput(); err != nil {
+				continue
+			} else {
+				break
 			}
-			framePos += uint64(got)
 		}
 		s.nextFrame += 1
 		s.Cond.Broadcast()
@@ -168,6 +178,10 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 			*nextFrame += 1
 		}
 	}()
+	if s.nextFrame > uint64(1) && *nextFrame == uint64(0) {
+		// New clients start out reading fresh frames.
+		*nextFrame = s.nextFrame - uint64(1)
+	}
 	s.Cond.L.Lock()
 	for *nextFrame >= s.nextFrame && !s.gone {
 		s.Cond.Wait()
@@ -177,25 +191,20 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 		err = io.EOF
 		return
 	}
-	for {
-		bufPos := *nextFrame % uint64(cap(s.frames))
-		if cap(frame) < len(s.frames[bufPos]) {
-			err = errors.New("Caller's frame buffer is too small.")
-			return
-		}
-		if s.nextFrame < *nextFrame+uint64(cap(s.frames)) {
-			// If we haven't been lapped by s.nextFrame...
-			copy(frame, s.frames[bufPos])
-			if s.nextFrame < *nextFrame+uint64(cap(s.frames)) {
-				// If we _still_ haven't been lapped by s.nextFrame...
-				return
-			}
-		}
+	if s.nextFrame >= *nextFrame + uint64(cap(s.frames)) {
 		// s.nextFrame has lapped *nextFrame. Catch up.
 		delta := s.nextFrame - *nextFrame - uint64(1)
 		nSkipped += delta
 		*nextFrame += delta
 	}
+	bufPos := *nextFrame % uint64(cap(s.frames))
+	s.frameLocks[bufPos].RLock()
+	defer s.frameLocks[bufPos].RUnlock()
+	copy(frame, s.frames[bufPos])
+	if cap(frame) < len(s.frames[bufPos]) {
+		err = errors.New("Caller's frame buffer is too small.")
+	}
+	return
 }
 
 func (s *Source) Done() {
