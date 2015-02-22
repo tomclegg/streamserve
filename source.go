@@ -123,7 +123,12 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 	lag := s.nextFrame - *nextFrame
 	if lag >= uint64(cap(s.frames)-1) {
 		*nextFrame = s.nextFrame - 1
-		nSkipped = lag
+		if *nextFrame > 0 {
+			nSkipped = lag
+		}
+		// else this is the client's first frame: don't count
+		// the initial fast-forward to the current stream
+		// position in the "skipped" stats.
 	}
 	bufPos := *nextFrame % uint64(cap(s.frames))
 	if cap(frame) < len(s.frames[bufPos]) {
