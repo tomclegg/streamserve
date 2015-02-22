@@ -15,6 +15,7 @@ type Config struct {
 	HeaderBytes     uint64
 	SourceBuffer    uint64
 	SourceBandwidth uint64
+	ClientMaxBytes  uint64
 	CloseIdle       bool
 	CpuMax          int
 	Reopen          bool
@@ -38,6 +39,8 @@ func init() {
 		"Number of frames to keep in memory for each source. The smaller this buffer is, the sooner a slow client will miss frames.")
 	flag.Uint64Var(&c.SourceBandwidth, "source-bandwidth", 0,
 		"Maximum bandwidth for each source, in bytes per second. 0=unlimited.")
+	flag.Uint64Var(&c.ClientMaxBytes, "client-max-bytes", 0,
+		"Maximum bytes to send to each client. 0=unlimited.")
 	flag.BoolVar(&c.CloseIdle, "close-idle", false,
 		"Close an input FIFO if all of its clients disconnect. This stops whatever process is writing to the FIFO, which can be useful if that process consumes resources, but depends on that process to restart/resume reliably. The FIFO will reopen next time a client requests it.")
 	flag.IntVar(&c.CpuMax, "cpu-max", runtime.NumCPU(),

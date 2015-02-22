@@ -76,7 +76,7 @@ func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err e
 	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
 		src := GetSource(c.Path, c)
 		fwriter := &FlushyResponseWriter{writer}
-		err := NewSink(req.RemoteAddr, fwriter, src).Run()
+		err := NewSink(req.RemoteAddr, fwriter, src, c).Run()
 		if e, ok := err.(*net.OpError); ok {
 			if e, ok := e.Err.(syscall.Errno); ok {
 				if e == syscall.ECONNRESET {

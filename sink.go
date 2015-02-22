@@ -8,8 +8,9 @@ import (
 
 type Sink struct {
 	io.Writer
-	label  string
-	source *Source
+	label    string
+	maxBytes uint64
+	source   *Source
 }
 
 func (sink *Sink) Run() (err error) {
@@ -38,10 +39,13 @@ func (sink *Sink) Run() (err error) {
 		}
 		statBytes += uint64(len(frame))
 		statFrames += 1
+		if sink.maxBytes > 0 && statBytes >= sink.maxBytes {
+			return
+		}
 	}
 }
 
 // Return a new sink for the given source.
-func NewSink(label string, dst io.Writer, source *Source) *Sink {
-	return &Sink{label: label, source: source, Writer: dst}
+func NewSink(label string, dst io.Writer, source *Source, c *Config) *Sink {
+	return &Sink{label: label, maxBytes: c.ClientMaxBytes, source: source, Writer: dst}
 }
