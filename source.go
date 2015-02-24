@@ -169,7 +169,7 @@ func (s *Source) GetHeader(buf []byte) (err error) {
 // nextFrame pointer.
 //
 // Return the number of frames skipped due to buffer underrun. If the
-// data source is exhausted, return with err != nil (with frame
+// data source is exhausted, return with err == io.EOF (with frame
 // untouched and other return values undefined).
 func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err error) {
 	defer func() {
@@ -178,6 +178,19 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 			*nextFrame += 1
 		}
 	}()
+	// We avoid doing more locking than absolutely necessary here,
+	// which causes some edge cases: it's possible for s.nextFrame
+	// to advance and even lap *nextFrame while we're deciding
+	// which frame to grab. However, since s.nextFrame never moves
+	// backward, the two worst cases are: [1] we grab a frame
+	// after computing nSkipped and then being lapped again, which
+	// means nSkipped underestimates the distance between the
+	// requested and actual frame (but this will be made up next
+	// time around), and [2] we grab a frame after s.nextFrame has
+	// advanced _to_ that frame, which means readNextFrame() will
+	// block while we copy the frame (but that's no worse than
+	// blocking _every_ readNextFrame, which would happen if we
+	// held a lock on s.nextFrame here).
 	if s.nextFrame > uint64(0) && *nextFrame == uint64(0) {
 		// New clients start out reading fresh frames.
 		*nextFrame = s.nextFrame - uint64(1)
@@ -194,6 +207,7 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 		}
 		s.Cond.L.Unlock()
 		if *nextFrame >= s.nextFrame {
+			// source is gone _and_ there are no more full frames in the buffer.
 			err = io.EOF
 			return
 		}
