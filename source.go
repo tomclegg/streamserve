@@ -178,15 +178,16 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 			*nextFrame += 1
 		}
 	}()
-	if s.nextFrame > uint64(1) && *nextFrame == uint64(0) {
+	if s.nextFrame > uint64(0) && *nextFrame == uint64(0) {
 		// New clients start out reading fresh frames.
 		*nextFrame = s.nextFrame - uint64(1)
-	} else if s.nextFrame >= *nextFrame + uint64(cap(s.frames)) {
+	} else if s.nextFrame >= *nextFrame+uint64(cap(s.frames)) {
 		// s.nextFrame has lapped *nextFrame. Catch up.
 		delta := s.nextFrame - *nextFrame - uint64(1)
 		nSkipped += delta
 		*nextFrame += delta
 	} else if *nextFrame >= s.nextFrame {
+		// Client has caught up to source. Includes "both are at zero" case.
 		s.Cond.L.Lock()
 		for *nextFrame >= s.nextFrame && !s.gone {
 			s.Cond.Wait()
