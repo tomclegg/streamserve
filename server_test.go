@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"io/ioutil"
 	"net/http"
 	"regexp"
 	"sync"
@@ -32,6 +33,34 @@ func TestServerListeningAddr(t *testing.T) {
 	CloseAllSources()
 	// Wait for server to stop
 	<-listening
+}
+
+func TestServerStopsIfCantReopen(t *testing.T) {
+	listening := make(chan string, 1)
+	done := make(chan bool)
+	go func() {
+		RunNewServer(&Config{
+			Addr:           ":0",
+			CloseIdle:      true,
+			FrameBytes:     16,
+			ClientMaxBytes: 16,
+			Path:           "/dev/urandom",
+			Reopen:         false,
+			SourceBuffer:   4,
+		}, listening, nil)
+		done <- true
+	}()
+	resp, err := http.Get(fmt.Sprintf("http://%s/", <-listening))
+	body, _ := ioutil.ReadAll(resp.Body)
+	t.Logf("GET: resp %v, err %v", body, err)
+	select {
+	case <-time.After(time.Second):
+		t.Error("Server should have shut down within 1s of client disconnect")
+	case addr := <-listening:
+		if addr != "" {
+			t.Errorf("listening channel expect '', got %v", addr)
+		}
+	}
 }
 
 func BenchmarkServer128ClientsGetZero(b *testing.B) {

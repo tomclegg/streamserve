@@ -91,6 +91,11 @@ func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err e
 		if err != nil {
 			log.Printf("client %s error: %s", req.RemoteAddr, err)
 		}
+		if src.gone && src.path == c.Path && !c.Reopen {
+			// The only source path has ended and can't be reopened.
+			srv.shutdown = true
+			srv.listener.Close()
+		}
 	})
 	srv.Handler = mux
 	err = srv.Serve(tcpKeepAliveListener{srv.listener})

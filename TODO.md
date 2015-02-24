@@ -1,6 +1,5 @@
 # TODO
 
-* Make sure to exit after sigpipe on stdin
 * Multiple streams (pay attention to client URI).
 * Better logging.
 * MIME types.

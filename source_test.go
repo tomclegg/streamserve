@@ -2,12 +2,103 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"hash/crc64"
 	"io"
+	"os"
+	"os/exec"
 	"runtime"
 	"sync"
 	"testing"
+	"time"
 )
+
+func TestSigpipe(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	cmd := exec.Command("head", "-c64", "/dev/urandom")
+	cmd.Stdout = w
+	if err = cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	w.Close()
+	go cmd.Wait()
+	source := GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+		SourceBuffer: 5,
+		FrameBytes:   16,
+		CloseIdle:    false,
+		Reopen:       true,
+	})
+	var frame = make(DataFrame, source.frameBytes)
+	var nextFrame uint64
+	for f := 0; f < 4; f++ {
+		if _, err = source.Next(&nextFrame, frame); err != nil {
+			t.Error(err)
+			break
+		}
+	}
+	done := make(chan error, 1)
+	go func() {
+		_, err = source.Next(&nextFrame, frame)
+		done <- err
+	}()
+	select {
+	case <-time.After(time.Second):
+		t.Error("Should have given up within 1s of SIGCHLD")
+	case err = <-done:
+		if err == nil {
+			t.Errorf("Should have error, got frame %v", frame)
+		}
+	}
+	r.Close()
+	source.Done()
+	CloseAllSources()
+}
+
+func TestEmptySource(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	closeNow := make(chan bool)
+	go func() {
+		<-closeNow
+		w.Close()
+	}()
+	source := GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+		SourceBuffer: 5,
+		FrameBytes:   16,
+		CloseIdle:    false,
+		Reopen:       false,
+	})
+	var frame = make(DataFrame, source.frameBytes)
+	var nextFrame uint64
+	done := make(chan error, 1)
+	go func() {
+		_, err := source.Next(&nextFrame, frame)
+		done <- err
+	}()
+	time.Sleep(time.Millisecond)
+	select {
+	case err := <-done:
+		t.Errorf("Should still be waiting for input, got error %v", err)
+	default:
+	}
+	closeNow <- true
+	select {
+	case <-time.After(100 * time.Millisecond):
+		t.Error("Should have given up within 100ms")
+	case err := <-done:
+		if err == nil {
+			t.Errorf("Should have error, got frame %v", frame)
+		}
+	}
+	source.Done()
+	r.Close()
+	CloseAllSources()
+}
 
 func TestHeader(t *testing.T) {
 	headerSize := uint64(64)
@@ -60,7 +151,7 @@ func TestContentEqual(t *testing.T) {
 		FrameBytes:   65536,
 	})
 	nConsumers := 10
-	done := make(chan uint64)
+	done := make(chan uint64, nConsumers)
 	tab := crc64.MakeTable(crc64.ECMA)
 	for i := 0; i < nConsumers; i++ {
 		go func() {

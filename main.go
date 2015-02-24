@@ -76,6 +76,17 @@ func main() {
 		log.Fatalf("Invalid configuration: %s", err)
 	}
 	listening := make(chan string)
-	go func() { log.Printf("Listening at %s", <-listening) }()
-	log.Fatal(RunNewServer(&config, listening, nil))
+	go func() {
+		for addr := range listening {
+			if addr == "" {
+				log.Print("Stopped listening")
+			} else {
+				log.Printf("Listening at %s", addr)
+			}
+		}
+	}()
+	err := RunNewServer(&config, listening, nil)
+	if err != nil {
+		log.Fatal(err)
+	}
 }
