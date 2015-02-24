@@ -85,7 +85,8 @@ func main() {
 			}
 		}
 	}()
-	err := RunNewServer(&config, listening, nil)
+	srv := &Server{}
+	err := srv.Run(&config, listening)
 	if err != nil {
 		log.Fatal(err)
 	}

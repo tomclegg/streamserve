@@ -17,20 +17,6 @@ type Server struct {
 	shutdown bool
 }
 
-func (srv *Server) runCtrlChannel(ctrl <-chan string) {
-	for cmd := range ctrl {
-		log.Print(cmd)
-		switch cmd {
-		case "shutdown":
-			log.Print("ctrl: shutting down")
-			srv.shutdown = true
-			srv.listener.Close()
-		default:
-			log.Fatalf("ctrl: unknown command '%s'", cmd)
-		}
-	}
-}
-
 type FlushyResponseWriter struct {
 	http.ResponseWriter
 }
@@ -46,7 +32,7 @@ func (writer *FlushyResponseWriter) Write(data []byte) (int, error) {
 	return writer.ResponseWriter.Write(data)
 }
 
-func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err error) {
+func (srv *Server) Run(c *Config, listening chan<- string) (err error) {
 	// c.Check() is just for tests -- main() has already done this.
 	if err = c.Check(); err != nil {
 		log.Fatal(err)
@@ -57,7 +43,6 @@ func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err e
 			listening <- ""
 		}
 	}()
-	srv := &Server{}
 	addr, err := net.ResolveTCPAddr("tcp", c.Addr)
 	if err != nil {
 		return
@@ -65,9 +50,6 @@ func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err e
 	srv.listener, err = net.ListenTCP("tcp", addr)
 	if err != nil {
 		return
-	}
-	if ctrl != nil {
-		go srv.runCtrlChannel(ctrl)
 	}
 	if listening != nil {
 		listening <- srv.listener.Addr().String()
@@ -93,8 +75,7 @@ func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err e
 		}
 		if src.gone && src.path == c.Path && !c.Reopen {
 			// The only source path has ended and can't be reopened.
-			srv.shutdown = true
-			srv.listener.Close()
+			srv.Close()
 		}
 	})
 	srv.Handler = mux
@@ -103,6 +84,11 @@ func RunNewServer(c *Config, listening chan<- string, ctrl <-chan string) (err e
 		err = nil
 	}
 	return
+}
+
+func (srv *Server) Close() {
+	srv.shutdown = true
+	srv.listener.Close()
 }
 
 // Copied from net/http because not exported.
