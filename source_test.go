@@ -109,19 +109,22 @@ func failUnless(t *testing.T, ms time.Duration, ok <-chan bool) {
 	}
 }
 
-func TestSentEqualsReceived(t *testing.T) {
+func DataFaker(t *testing.T) (string, chan<- interface{}, *[]byte) {
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
 	}
-	sentData := []byte{}
-	wantMore := make(chan int)
+	var sentData []byte
+	wantMore := make(chan interface{})
 	go func() {
-		for n := range wantMore {
-			if n == 0 {
-				break
+		for cmd := range wantMore {
+			var moreData []byte
+			var n int
+			if n, ok := cmd.(int); ok {
+				moreData = make([]byte, n)
+			} else {
+				moreData = cmd.([]byte)
 			}
-			moreData := make([]byte, n)
 			for i := 0; i < n; i++ {
 				moreData[i] = byte(rand.Int() & 0xff)
 			}
@@ -131,9 +134,76 @@ func TestSentEqualsReceived(t *testing.T) {
 			}
 			w.Sync()
 		}
+		r.Close()
 		w.Close()
 	}()
-	source := GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+	return fmt.Sprintf("/dev/fd/%d", r.Fd()), wantMore, &sentData
+}
+
+func TestSourceFilter(t *testing.T) {
+	type expect struct {
+		frame     []byte
+		frameSize int
+		err       error
+	}
+	fMock := make(chan *expect, 100)
+	var pending *expect
+	Filters["MOCK"] = func(frame []byte, context *interface{}) (frameSize int, err error) {
+		if pending == nil {
+			pending = <-fMock
+		}
+		if len(frame) < len(pending.frame) {
+			return len(pending.frame), ShortFrame
+		}
+		if 0 != bytes.Compare(pending.frame, frame[0:len(pending.frame)]) {
+			t.Fatalf("Expected filter(%v), got %v", pending.frame, frame)
+		}
+		defer func() { pending = nil }()
+		return pending.frameSize, pending.err
+	}
+	defer func() { delete(Filters, "MOCK") }()
+	fakeFile, sendFake, _ := DataFaker(t)
+	source := GetSource(fakeFile, &Config{
+		SourceBuffer: 5,
+		FrameBytes:   4,
+		CloseIdle:    true,
+		Reopen:       false,
+		FrameFilter:  "MOCK",
+	})
+	var nextFrame uint64
+	var frame = make(DataFrame, 4)
+	expectNext := func(expect []byte, expectErr error) {
+		_, err := source.Next(&nextFrame, &frame)
+		if err != expectErr {
+			t.Errorf("Frame %d expected err %s got %s", nextFrame, expectErr, err)
+		} else if err == nil && 0 != bytes.Compare(expect, frame) {
+			t.Errorf("Frame %d expected bytes %v got %v", nextFrame, expect, frame)
+		}
+	}
+	// Our mock filter will pass any frame without a 00.
+	sendFake <- []byte{11, 22, 33, 44, 11, 22, 33, 00, 11, 00, 33, 44, 11, 22, 33, 44}
+	fMock <- &expect{[]byte{11, 22, 33, 44}, 4, nil}
+	expectNext([]byte{11, 22, 33, 44}, nil)
+	fMock <- &expect{[]byte{11, 22, 33, 00}, 3, nil}
+	expectNext([]byte{11, 22, 33}, nil)
+	fMock <- &expect{[]byte{00, 11, 00, 33}, 0, InvalidFrame}
+	fMock <- &expect{[]byte{11, 00, 33, 44}, 1, nil}
+	expectNext([]byte{11}, nil)
+	fMock <- &expect{[]byte{00, 33, 44, 11}, 0, InvalidFrame}
+	fMock <- &expect{[]byte{33, 44, 11, 22}, 4, nil}
+	expectNext([]byte{33, 44, 11, 22}, nil)
+	source.Done()
+	// TODO: source should give filter a chance to accept the data at EOF, even though it doesn't fill max frame size.
+	// fMock <- &expect{[]byte{33,44}, 1, nil}
+	// fMock <- &expect{[]byte{44}, 1, nil}
+	// expectNext([]byte{33}, nil)
+	// expectNext([]byte{44}, nil)
+	expectNext([]byte{}, io.EOF)
+}
+
+func TestSentEqualsReceived(t *testing.T) {
+	fakeData, wantMore, sentData := DataFaker(t)
+	source := GetSource(fakeData, &Config{
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    true,
@@ -170,12 +240,11 @@ func TestSentEqualsReceived(t *testing.T) {
 		ok <- true
 	}()
 	failUnless(t, 100, ok)
-	wantData := sentData[0:1600]
+	wantData := (*sentData)[0:1600]
 	if 0 != bytes.Compare(wantData, rcvdData) {
 		t.Errorf("want %d != rcvd %d", len(wantData), len(rcvdData))
 	}
 	source.Done()
-	r.Close()
 	CloseAllSources()
 }
 
