@@ -12,25 +12,29 @@ import (
 )
 
 type Source struct {
-	sinkCount       int
-	frames          []DataFrame
-	frameLocks      []sync.RWMutex
-	frameBytes      uint64
-	gone            bool
-	header          []byte
-	HeaderBytes     uint64
-	input           io.ReadCloser
-	nextFrame       uint64 // How many frames have ever been here
-	path            string
-	closeIdle       bool
-	reopen          bool
-	bandwidth       uint64
-	sync.RWMutex    // Must be held while changing nextFrame or gone
-	*sync.Cond      // Control access to frames other than nextFrame
-	statBytesIn     uint64
-	statBytesOut    uint64
-	statLast        time.Time
-	statLogInterval time.Duration
+	sinkCount        int
+	todo             DataFrame
+	frames           []DataFrame
+	frameLocks       []sync.RWMutex
+	frameBytes       uint64
+	gone             bool
+	header           []byte
+	HeaderBytes      uint64
+	input            io.ReadCloser
+	nextFrame        uint64 // How many frames have ever been here
+	path             string
+	closeIdle        bool
+	reopen           bool
+	bandwidth        uint64
+	filter           FilterFunc
+	filterContext    interface{}
+	sync.RWMutex     // Must be held while changing nextFrame or gone
+	*sync.Cond       // Control access to frames other than nextFrame
+	statBytesInvalid uint64
+	statBytesIn      uint64
+	statBytesOut     uint64
+	statLast         time.Time
+	statLogInterval  time.Duration
 }
 
 var sourceMap = make(map[string]*Source)
@@ -44,6 +48,7 @@ func NewSource(path string, c *Config) (s *Source) {
 	for i := range s.frames {
 		s.frames[i] = make(DataFrame, c.FrameBytes)
 	}
+	s.todo = make(DataFrame, 0, c.FrameBytes)
 	s.bandwidth = c.SourceBandwidth
 	s.closeIdle = c.CloseIdle
 	s.frameBytes = c.FrameBytes
@@ -51,6 +56,7 @@ func NewSource(path string, c *Config) (s *Source) {
 	s.path = path
 	s.reopen = c.Reopen
 	s.statLogInterval = c.StatLogInterval
+	s.filter = Filters[c.FrameFilter]
 	return
 }
 
@@ -87,12 +93,47 @@ func (s *Source) readNextFrame() (err error) {
 	bufPos := s.nextFrame % uint64(cap(s.frames))
 	s.frameLocks[bufPos].Lock()
 	defer s.frameLocks[bufPos].Unlock()
-	for framePos := uint64(0); framePos < s.frameBytes; {
-		var got int
-		if got, err = s.input.Read(s.frames[bufPos][framePos:]); got <= 0 {
-			return
+	s.frames[bufPos] = s.frames[bufPos][:cap(s.frames[bufPos])]
+	for frameEnd := 0; frameEnd < int(s.frameBytes); {
+		if len(s.todo) > 0 {
+			copy(s.frames[bufPos][frameEnd:], s.todo)
+			frameEnd += len(s.todo)
+			s.todo = s.todo[:0]
+		} else {
+			got, err := s.input.Read(s.frames[bufPos][frameEnd:])
+			if got > 0 {
+				frameEnd += got
+				s.statBytesIn += uint64(got)
+			} else if err != nil {
+				return err
+			}
 		}
-		framePos += uint64(got)
+		frameStart := 0
+		for err != ShortFrame && frameStart < frameEnd {
+			var okFrameSize int
+			okFrameSize, err = s.filter(s.frames[bufPos][frameStart:frameEnd], &s.filterContext)
+			switch err {
+			case nil:
+				s.todo = s.todo[:frameEnd-okFrameSize-frameStart]
+				copy(s.todo, s.frames[bufPos][frameStart+okFrameSize:frameEnd])
+				if frameStart > 0 {
+					copy(s.frames[bufPos], s.frames[bufPos][frameStart:frameStart+okFrameSize])
+				}
+				s.frames[bufPos] = s.frames[bufPos][:okFrameSize]
+				return nil
+			case InvalidFrame:
+				// Try filter again on next byte
+				frameStart += 1
+				s.statBytesInvalid += 1
+				err = nil
+			default:
+			}
+		}
+		// Shuffle the remaining bytes over and get more data
+		copy(s.frames[bufPos], s.frames[bufPos][frameStart:frameEnd])
+		frameEnd -= frameStart
+		frameStart = 0
+		err = nil
 	}
 	return
 }
@@ -127,7 +168,6 @@ func (s *Source) run() {
 		}
 		s.nextFrame += 1
 		s.Cond.Broadcast()
-		s.statBytesIn += s.frameBytes
 		s.LogStats(false)
 		if ticker != nil {
 			<-ticker.C
@@ -142,7 +182,7 @@ func (s *Source) run() {
 func (s *Source) LogStats(really bool) {
 	if really || (s.statLogInterval > 0 && time.Since(s.statLast) >= s.statLogInterval) {
 		s.statLast.Add(s.statLogInterval)
-		log.Printf("source %s stats: %d in %d out", s.path, s.statBytesIn, s.statBytesOut)
+		log.Printf("source %s stats: %d in (%d invalid) %d out", s.path, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
 	}
 }
 
@@ -171,13 +211,7 @@ func (s *Source) GetHeader(buf []byte) (err error) {
 // Return the number of frames skipped due to buffer underrun. If the
 // data source is exhausted, return with err == io.EOF (with frame
 // untouched and other return values undefined).
-func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err error) {
-	defer func() {
-		if err == nil {
-			atomic.AddUint64(&s.statBytesOut, s.frameBytes)
-			*nextFrame += 1
-		}
-	}()
+func (s *Source) Next(nextFrame *uint64, frame *DataFrame) (nSkipped uint64, err error) {
 	// We avoid doing more locking than absolutely necessary here,
 	// which causes some edge cases: it's possible for s.nextFrame
 	// to advance and even lap *nextFrame while we're deciding
@@ -215,10 +249,13 @@ func (s *Source) Next(nextFrame *uint64, frame DataFrame) (nSkipped uint64, err 
 	bufPos := *nextFrame % uint64(cap(s.frames))
 	s.frameLocks[bufPos].RLock()
 	defer s.frameLocks[bufPos].RUnlock()
-	copy(frame, s.frames[bufPos])
-	if cap(frame) < len(s.frames[bufPos]) {
+	if cap(*frame) < len(s.frames[bufPos]) {
 		err = errors.New("Caller's frame buffer is too small.")
 	}
+	*frame = (*frame)[:len(s.frames[bufPos])]
+	copy(*frame, s.frames[bufPos])
+	atomic.AddUint64(&s.statBytesOut, uint64(len(s.frames[bufPos])))
+	*nextFrame += 1
 	return
 }
 

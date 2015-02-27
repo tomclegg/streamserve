@@ -3,15 +3,19 @@ package main
 import (
 	"errors"
 	"flag"
+	"fmt"
 	"log"
 	"runtime"
 	"time"
 )
 
+var Debugging = false
+
 type Config struct {
 	Addr            string
 	Path            string
 	FrameBytes      uint64
+	FrameFilter     string
 	HeaderBytes     uint64
 	SourceBuffer    uint64
 	SourceBandwidth uint64
@@ -33,6 +37,8 @@ func init() {
 		"Path to a source fifo, or a directory containing source fifos mapped onto the URI namespace.")
 	flag.Uint64Var(&c.FrameBytes, "frame-bytes", 64,
 		"Size of a data frame. Only complete frames are sent to clients.")
+	flag.StringVar(&c.FrameFilter, "frame-filter", "",
+		"Detect frame boundaries in source streams and send only full frames to clients. When -frame-filter is active, -frame-bytes is the maximum frame size. Supported filter: mp3")
 	flag.Uint64Var(&c.HeaderBytes, "header-bytes", 0,
 		"Size of header. A header is read from each source when it is opened, and delivered to each client before sending any data bytes.")
 	flag.Uint64Var(&c.SourceBuffer, "source-buffer", 64,
@@ -49,6 +55,8 @@ func init() {
 		"Reopen and resume reading if an error is encountered while reading an input FIFO. Default is true. Use -reopen=false to disable.")
 	flag.DurationVar(&c.StatLogInterval, "stat-log-interval", 0,
 		"Seconds between periodic statistics logs for each stream source, or 0 to disable.")
+	flag.BoolVar(&Debugging, "debug", false,
+		"Print debug info.")
 }
 
 func (c Config) Check() error {
@@ -66,6 +74,13 @@ func (c Config) Check() error {
 	}
 	if c.CpuMax == 0 {
 		c.CpuMax = runtime.NumCPU()
+	}
+	if _, ok := Filters[c.FrameFilter]; !ok {
+		haveFilters := []string{}
+		for f := range Filters {
+			haveFilters = append(haveFilters, "\""+f+"\"")
+		}
+		return errors.New(fmt.Sprintf("-frame-filter \"%s\" not supported; try one of %v", c.FrameFilter, haveFilters))
 	}
 	return nil
 }

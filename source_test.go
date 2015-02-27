@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/crc64"
 	"io"
+	"math/rand"
 	"os"
 	"os/exec"
 	"runtime"
@@ -34,14 +35,14 @@ func TestSigpipe(t *testing.T) {
 	var frame = make(DataFrame, source.frameBytes)
 	var nextFrame uint64
 	for f := 0; f < 4; f++ {
-		if _, err = source.Next(&nextFrame, frame); err != nil {
+		if _, err = source.Next(&nextFrame, &frame); err != nil {
 			t.Error(err)
 			break
 		}
 	}
 	done := make(chan error, 1)
 	go func() {
-		_, err = source.Next(&nextFrame, frame)
+		_, err = source.Next(&nextFrame, &frame)
 		done <- err
 	}()
 	select {
@@ -77,7 +78,7 @@ func TestEmptySource(t *testing.T) {
 	var nextFrame uint64
 	done := make(chan error, 1)
 	go func() {
-		_, err := source.Next(&nextFrame, frame)
+		_, err := source.Next(&nextFrame, &frame)
 		done <- err
 	}()
 	time.Sleep(time.Millisecond)
@@ -94,6 +95,84 @@ func TestEmptySource(t *testing.T) {
 		if err == nil {
 			t.Errorf("Should have error, got frame %v", frame)
 		}
+	}
+	source.Done()
+	r.Close()
+	CloseAllSources()
+}
+
+func failUnless(t *testing.T, ms time.Duration, ok <-chan bool) {
+	select {
+	case <-time.After(ms * time.Millisecond):
+		t.Fatalf("Timed out in %d ms", ms)
+	case <-ok:
+	}
+}
+
+func TestSentEqualsReceived(t *testing.T) {
+	r, w, err := os.Pipe()
+	if err != nil {
+		t.Fatal(err)
+	}
+	sentData := []byte{}
+	wantMore := make(chan int)
+	go func() {
+		for n := range wantMore {
+			if n == 0 {
+				break
+			}
+			moreData := make([]byte, n)
+			for i := 0; i < n; i++ {
+				moreData[i] = byte(rand.Int() & 0xff)
+			}
+			sentData = append(sentData, moreData...)
+			if did, err := w.Write(moreData); did < len(moreData) || err != nil {
+				t.Error("Short write: %d < %d, %s", did, len(moreData), err)
+			}
+			w.Sync()
+		}
+		w.Close()
+	}()
+	source := GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+		SourceBuffer: 5,
+		FrameBytes:   16,
+		CloseIdle:    true,
+		Reopen:       false,
+	})
+	var rcvdData = []byte{}
+	var frame = make(DataFrame, source.frameBytes)
+	var nextFrame uint64
+	ok := make(chan bool)
+	wantMore <- 19 // Send one full frame (to make sure we start receiving at frame 0) and a bit extra
+	for f := 100; f > 0; f-- {
+		go func() {
+			if _, err := source.Next(&nextFrame, &frame); err != nil {
+				t.Fatal(err)
+			}
+			if len(frame) != 16 {
+				t.Errorf("Wrong size frame, want 16 got %d", len(frame))
+			}
+			ok <- true
+		}()
+		failUnless(t, 100, ok)
+		rcvdData = append(rcvdData, frame...)
+		if f == 4 {
+			wantMore <- 16 * 3 // Last three frames (we sent one frame before the loop)
+		} else if f%4 == 0 {
+			wantMore <- 16 * 4 // Next four frames
+		}
+	}
+	close(wantMore)
+	go func() {
+		if _, err := source.Next(&nextFrame, &frame); err != io.EOF {
+			t.Error("Should have got EOF")
+		}
+		ok <- true
+	}()
+	failUnless(t, 100, ok)
+	wantData := sentData[0:1600]
+	if 0 != bytes.Compare(wantData, rcvdData) {
+		t.Errorf("want %d != rcvd %d", len(wantData), len(rcvdData))
 	}
 	source.Done()
 	r.Close()
@@ -133,7 +212,7 @@ func TestHeader(t *testing.T) {
 		var nextFrame uint64
 		for f := 0; f < 6; f++ {
 			var err error
-			if _, err = source.Next(&nextFrame, frame); err != nil {
+			if _, err = source.Next(&nextFrame, &frame); err != nil {
 				if err != io.EOF {
 					t.Error(err)
 				}
@@ -161,7 +240,7 @@ func TestContentEqual(t *testing.T) {
 			var nextFrame uint64
 			for f := 0; f < 130; f++ {
 				var err error
-				if _, err = source.Next(&nextFrame, frame); err != nil && err != io.EOF {
+				if _, err = source.Next(&nextFrame, &frame); err != nil && err != io.EOF {
 					t.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
 				}
 				hash = crc64.Update(hash, tab, frame)
@@ -251,7 +330,7 @@ func consume(b *testing.B, source *Source, label interface{}) {
 	var frame DataFrame = make(DataFrame, source.frameBytes)
 	var nextFrame uint64
 	for i := uint64(0); i < 10*uint64(b.N); i++ {
-		if _, err := source.Next(&nextFrame, frame); err != nil {
+		if _, err := source.Next(&nextFrame, &frame); err != nil {
 			if err != io.EOF {
 				b.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
 			}

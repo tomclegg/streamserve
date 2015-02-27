@@ -38,7 +38,7 @@ func (sink *Sink) Run() (err error) {
 	var nextFrame uint64
 	for {
 		var nSkip uint64
-		if nSkip, err = sink.source.Next(&nextFrame, frame); err != nil {
+		if nSkip, err = sink.source.Next(&nextFrame, &frame); err != nil {
 			return
 		}
 		if nSkip > 0 {
