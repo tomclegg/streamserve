@@ -228,6 +228,7 @@ func TestContentEqual(t *testing.T) {
 	source := GetSource("/dev/urandom", &Config{
 		SourceBuffer: 32,
 		FrameBytes:   65536,
+		CloseIdle:    true,
 	})
 	nConsumers := 10
 	done := make(chan uint64, nConsumers)
@@ -256,7 +257,7 @@ func TestContentEqual(t *testing.T) {
 			t.Errorf("hash mismatch: h0=%x, h%d=%x", h0, i, hi)
 		}
 	}
-	CloseAllSources()
+	source.Done()
 }
 
 // 32s of CD audio, 1s per frame, 1000 consumers
