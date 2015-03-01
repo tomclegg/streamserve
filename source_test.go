@@ -397,7 +397,7 @@ func benchSource(b *testing.B, nConsumers int, c Config) {
 }
 
 func consume(b *testing.B, source *Source, label interface{}) {
-	var frame DataFrame = make(DataFrame, source.frameBytes)
+	var frame = make(DataFrame, source.frameBytes)
 	var nextFrame uint64
 	for i := uint64(0); i < 10*uint64(b.N); i++ {
 		if _, err := source.Next(&nextFrame, &frame); err != nil {

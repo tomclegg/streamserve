@@ -17,6 +17,9 @@ type Server struct {
 	shutdown bool
 }
 
+// FlushyResponseWriter wraps http.ResponseWriter, calling Flush()
+// after each Write(). Write() panics if the wrapped ResponseWriter
+// does not implement the http.Flusher interface.
 type FlushyResponseWriter struct {
 	http.ResponseWriter
 }
@@ -37,7 +40,7 @@ func (srv *Server) Run(c *Config, listening chan<- string) (err error) {
 	if err = c.Check(); err != nil {
 		log.Fatal(err)
 	}
-	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(c.CpuMax))
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(c.CPUMax))
 	defer func() {
 		if listening != nil {
 			listening <- ""

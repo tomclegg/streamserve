@@ -21,7 +21,7 @@ type Config struct {
 	SourceBandwidth uint64
 	ClientMaxBytes  uint64
 	CloseIdle       bool
-	CpuMax          int
+	CPUMax          int
 	Reopen          bool
 	StatLogInterval time.Duration
 }
@@ -49,7 +49,7 @@ func init() {
 		"Maximum bytes to send to each client. 0=unlimited.")
 	flag.BoolVar(&c.CloseIdle, "close-idle", false,
 		"Close an input FIFO if all of its clients disconnect. This stops whatever process is writing to the FIFO, which can be useful if that process consumes resources, but depends on that process to restart/resume reliably. The FIFO will reopen next time a client requests it.")
-	flag.IntVar(&c.CpuMax, "cpu-max", runtime.NumCPU(),
+	flag.IntVar(&c.CPUMax, "cpu-max", runtime.NumCPU(),
 		"Maximum OS procs/threads to use. This effectively limits CPU consumption to the given number of cores. The default is the number of CPUs reported by the system. If 0 is given, the default is used.")
 	flag.BoolVar(&c.Reopen, "reopen", true,
 		"Reopen and resume reading if an error is encountered while reading an input FIFO. Default is true. Use -reopen=false to disable.")
@@ -61,26 +61,26 @@ func init() {
 
 func (c Config) Check() error {
 	if c.SourceBuffer <= 2 {
-		return errors.New("-source-buffer must be greater than 2.")
+		return errors.New("-source-buffer must be greater than 2")
 	}
 	if c.FrameBytes < 1 {
-		return errors.New("-frame-bytes must not be zero.")
+		return errors.New("-frame-bytes must not be zero")
 	}
 	if c.Path == "" {
-		return errors.New("-path must not be empty.")
+		return errors.New("-path must not be empty")
 	}
-	if c.CpuMax < 0 {
-		return errors.New("-cpu-max must not be negative.")
+	if c.CPUMax < 0 {
+		return errors.New("-cpu-max must not be negative")
 	}
-	if c.CpuMax == 0 {
-		c.CpuMax = runtime.NumCPU()
+	if c.CPUMax == 0 {
+		c.CPUMax = runtime.NumCPU()
 	}
 	if _, ok := Filters[c.FrameFilter]; !ok {
 		haveFilters := []string{}
 		for f := range Filters {
 			haveFilters = append(haveFilters, "\""+f+"\"")
 		}
-		return errors.New(fmt.Sprintf("-frame-filter \"%s\" not supported; try one of %v", c.FrameFilter, haveFilters))
+		return fmt.Errorf("-frame-filter \"%s\" not supported; try one of %v", c.FrameFilter, haveFilters)
 	}
 	return nil
 }

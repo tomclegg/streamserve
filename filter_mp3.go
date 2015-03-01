@@ -69,16 +69,16 @@ var layerName = []string{"", "III", "II", "I"}
 var versionName = []string{"2.5", "", "2.0", "1.0"}
 
 var invalid = []int{}
-var v1l1_bitrate = []int{-1, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, -1}
-var v1l2_bitrate = []int{-1, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, -1}
-var v1l3_bitrate = []int{-1, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, -1}
-var v2l1_bitrate = []int{-1, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, -1}
-var v2l2_bitrate = []int{-1, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, -1}
+var v1l1Bitrate = []int{-1, 32, 64, 96, 128, 160, 192, 224, 256, 288, 320, 352, 384, 416, 448, -1}
+var v1l2Bitrate = []int{-1, 32, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, 384, -1}
+var v1l3Bitrate = []int{-1, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224, 256, 320, -1}
+var v2l1Bitrate = []int{-1, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, -1}
+var v2l2Bitrate = []int{-1, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, -1}
 var bitrateTable = [][][]int{
-	[][]int{invalid, v2l2_bitrate, v2l2_bitrate, v2l1_bitrate}, // version2_5
+	[][]int{invalid, v2l2Bitrate, v2l2Bitrate, v2l1Bitrate}, // version2_5
 	[][]int{invalid, invalid, invalid, invalid},
-	[][]int{invalid, v2l2_bitrate, v2l2_bitrate, v2l1_bitrate}, // version2
-	[][]int{invalid, v1l3_bitrate, v1l2_bitrate, v1l1_bitrate}, // version1
+	[][]int{invalid, v2l2Bitrate, v2l2Bitrate, v2l1Bitrate}, // version2
+	[][]int{invalid, v1l3Bitrate, v1l2Bitrate, v1l1Bitrate}, // version1
 }
 var samplerateTable = [][]int{
 	[]int{11025, 12000, 8000}, // version2_5

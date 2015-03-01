@@ -34,7 +34,7 @@ func (sink *Sink) Run() (err error) {
 		sink.Write(header)
 		statBytes += uint64(len(header))
 	}
-	var frame DataFrame = make(DataFrame, sink.source.frameBytes)
+	var frame = make(DataFrame, sink.source.frameBytes)
 	var nextFrame uint64
 	for {
 		var nSkip uint64
@@ -49,7 +49,7 @@ func (sink *Sink) Run() (err error) {
 			return
 		}
 		statBytes += uint64(len(frame))
-		statFrames += 1
+		statFrames++
 		if sink.maxBytes > 0 && statBytes >= sink.maxBytes {
 			return
 		}

@@ -123,8 +123,8 @@ func (s *Source) readNextFrame() (err error) {
 				return nil
 			case InvalidFrame:
 				// Try filter again on next byte
-				frameStart += 1
-				s.statBytesInvalid += 1
+				frameStart++
+				s.statBytesInvalid++
 				err = nil
 			default:
 			}
@@ -138,9 +138,9 @@ func (s *Source) readNextFrame() (err error) {
 	return
 }
 
-// Read data from the given source into the buffer. If the source
-// reaches EOF and cannot be reopened, remove the source from
-// sourceMap and return.
+// run() reads data from the input pipe into the buffer until the
+// source reaches EOF and cannot be reopened. It then removes the
+// source from sourceMap and returns.
 func (s *Source) run() {
 	var err error
 	s.statLast = time.Now()
@@ -172,7 +172,7 @@ func (s *Source) run() {
 				break
 			}
 		}
-		s.nextFrame += 1
+		s.nextFrame++
 		s.Cond.Broadcast()
 		if ticker != nil {
 			<-ticker.C
@@ -262,12 +262,12 @@ func (s *Source) Next(nextFrame *uint64, frame *DataFrame) (nSkipped uint64, err
 	*frame = (*frame)[:len(s.frames[bufPos])]
 	copy(*frame, s.frames[bufPos])
 	atomic.AddUint64(&s.statBytesOut, uint64(len(s.frames[bufPos])))
-	*nextFrame += 1
+	*nextFrame++
 	return
 }
 
 func (s *Source) Done() {
-	s.sinkCount -= 1
+	s.sinkCount--
 	if s.closeIdle {
 		s.CloseIfIdle()
 	}
@@ -303,8 +303,9 @@ func CloseAllSources() {
 	}
 }
 
-// Return a Source for the given path (URI) and config (argv). At any
-// given time, there is at most one Source for a given path.
+// GetSource returns a Source for the given path (URI) and config
+// (argv). At any given time, there is at most one Source for a given
+// path.
 //
 // The caller must ensure Done() is eventually called, exactly once,
 // on the returned *Source.
@@ -317,6 +318,6 @@ func GetSource(path string, c *Config) (src *Source) {
 		sourceMap[path] = src
 		go src.run()
 	}
-	src.sinkCount += 1
+	src.sinkCount++
 	return src
 }
