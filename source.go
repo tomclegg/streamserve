@@ -144,7 +144,7 @@ func (s *Source) readNextFrame() (err error) {
 func (s *Source) run() {
 	var err error
 	s.statLast = time.Now()
-	defer s.LogStats(true)
+	defer s.LogStats()
 	defer s.Close()
 	if err := s.openInput(); err != nil {
 		return
@@ -152,6 +152,12 @@ func (s *Source) run() {
 	var ticker *time.Ticker
 	if s.bandwidth > 0 {
 		ticker = time.NewTicker(time.Duration(uint64(1000000000) * s.frameBytes / s.bandwidth))
+	}
+	var statTicker <-chan time.Time
+	if s.statLogInterval > 0 {
+		statTicker = (time.NewTicker(s.statLogInterval)).C
+	} else {
+		statTicker = make(chan time.Time)
 	}
 	for !s.gone {
 		if err = s.readNextFrame(); err != nil {
@@ -168,9 +174,13 @@ func (s *Source) run() {
 		}
 		s.nextFrame += 1
 		s.Cond.Broadcast()
-		s.LogStats(false)
 		if ticker != nil {
 			<-ticker.C
+		}
+		select {
+		case <-statTicker:
+			s.LogStats()
+		default:
 		}
 	}
 	if s.input != nil {
@@ -178,12 +188,9 @@ func (s *Source) run() {
 	}
 }
 
-// If !really, only if statLogInterval says so.
-func (s *Source) LogStats(really bool) {
-	if really || (s.statLogInterval > 0 && time.Since(s.statLast) >= s.statLogInterval) {
-		s.statLast.Add(s.statLogInterval)
-		log.Printf("source %s stats: %d in (%d invalid) %d out", s.path, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
-	}
+// LogStats logs data source and client statistics (bytes in, skipped, out).
+func (s *Source) LogStats() {
+	log.Printf("source %s stats: %d in (%d invalid) %d out", s.path, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
 }
 
 func (s *Source) GetHeader(buf []byte) (err error) {
