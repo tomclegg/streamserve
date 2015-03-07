@@ -15,6 +15,7 @@ import (
 )
 
 func TestSigpipe(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -60,6 +61,7 @@ func TestSigpipe(t *testing.T) {
 }
 
 func TestEmptySource(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	r, w, err := os.Pipe()
 	if err != nil {
 		t.Fatal(err)
@@ -143,6 +145,7 @@ func DataFaker(t *testing.T) (string, chan<- interface{}, *[]byte) {
 }
 
 func TestSourceFilter(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	type expect struct {
 		frame     []byte
 		frameSize int
@@ -206,6 +209,7 @@ func TestSourceFilter(t *testing.T) {
 }
 
 func TestSentEqualsReceived(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	fakeData, wantMore, sentData := DataFaker(t)
 	sm := NewSourceMap()
 	defer sm.Close()
@@ -254,6 +258,7 @@ func TestSentEqualsReceived(t *testing.T) {
 }
 
 func TestHeader(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	headerSize := uint64(64)
 	nClients := 5
 	sm := NewSourceMap()
@@ -299,7 +304,10 @@ func TestHeader(t *testing.T) {
 	}
 }
 
+// TestContentEqual can be extremely slow (dozens of seconds) if
+// GOMAXPROCS==1.
 func TestContentEqual(t *testing.T) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	nConsumers := 10
 	done := make(chan uint64, nConsumers)
 	tab := crc64.MakeTable(crc64.ECMA)
