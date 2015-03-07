@@ -1,5 +1,6 @@
 # TODO
 
+* Replace (*Server)Run "listening" channel with a method.
 * Multiple streams (pay attention to client URI).
 * Better logging.
 * MIME types.
