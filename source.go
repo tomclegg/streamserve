@@ -35,13 +35,12 @@ type Source struct {
 	statBytesOut     uint64
 	statLast         time.Time
 	statLogInterval  time.Duration
+	sourceMap        *SourceMap
 }
 
-var sourceMap = make(map[string]*Source)
-var sourceMapMutex = sync.RWMutex{}
-
-func NewSource(path string, c *Config) (s *Source) {
+func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 	s = &Source{}
+	s.sourceMap = sourceMap
 	s.Cond = sync.NewCond(s.RLocker())
 	s.frameLocks = make([]sync.RWMutex, c.SourceBuffer)
 	s.frames = make([]DataFrame, c.SourceBuffer)
@@ -286,19 +285,29 @@ func (s *Source) Close() {
 
 func (s *Source) CloseIfIdle() {
 	didClose := false
-	sourceMapMutex.Lock()
+	s.sourceMap.mutex.Lock()
 	if s.sinkCount == 0 {
-		delete(sourceMap, s.path)
+		delete(s.sourceMap.sources, s.path)
 		didClose = true
 	}
-	sourceMapMutex.Unlock()
+	s.sourceMap.mutex.Unlock()
 	if didClose {
 		s.disconnectAll()
 	}
 }
 
-func CloseAllSources() {
-	for _, src := range sourceMap {
+type SourceMap struct {
+	sources map[string]*Source
+	mutex   sync.RWMutex
+}
+
+func NewSourceMap() (sm *SourceMap) {
+	sm = &SourceMap{sources: make(map[string]*Source)}
+	return
+}
+
+func (sm *SourceMap) Close() {
+	for _, src := range sm.sources {
 		src.Close()
 	}
 }
@@ -309,13 +318,13 @@ func CloseAllSources() {
 //
 // The caller must ensure Done() is eventually called, exactly once,
 // on the returned *Source.
-func GetSource(path string, c *Config) (src *Source) {
-	sourceMapMutex.Lock()
-	defer sourceMapMutex.Unlock()
+func (sm *SourceMap) GetSource(path string, c *Config) (src *Source) {
+	sm.mutex.Lock()
+	defer sm.mutex.Unlock()
 	var ok bool
-	if src, ok = sourceMap[path]; !ok {
-		src = NewSource(path, c)
-		sourceMap[path] = src
+	if src, ok = sm.sources[path]; !ok {
+		src = NewSource(path, c, sm)
+		sm.sources[path] = src
 		go src.run()
 	}
 	src.sinkCount++

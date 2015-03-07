@@ -12,9 +12,10 @@ import (
 
 type Server struct {
 	http.Server
-	config   Config
-	listener *net.TCPListener
-	shutdown bool
+	config    Config
+	listener  *net.TCPListener
+	shutdown  bool
+	sourceMap *SourceMap
 }
 
 // FlushyResponseWriter wraps http.ResponseWriter, calling Flush()
@@ -57,9 +58,10 @@ func (srv *Server) Run(c *Config, listening chan<- string) (err error) {
 	if listening != nil {
 		listening <- srv.listener.Addr().String()
 	}
+	srv.sourceMap = NewSourceMap()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
-		src := GetSource(c.Path, c)
+		src := srv.sourceMap.GetSource(c.Path, c)
 		fwriter := &FlushyResponseWriter{writer}
 		err := NewSink(req.RemoteAddr, fwriter, src, c).Run()
 		if e, ok := err.(*net.OpError); ok {
@@ -92,6 +94,7 @@ func (srv *Server) Run(c *Config, listening chan<- string) (err error) {
 func (srv *Server) Close() {
 	srv.shutdown = true
 	srv.listener.Close()
+	srv.sourceMap.Close()
 }
 
 // Copied from net/http because not exported.

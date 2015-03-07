@@ -25,13 +25,17 @@ func TestSigpipe(t *testing.T) {
 		t.Fatal(err)
 	}
 	w.Close()
+	defer r.Close()
 	go cmd.Wait()
-	source := GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+	sm := NewSourceMap()
+	defer sm.Close()
+	source := sm.GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    false,
 		Reopen:       true,
 	})
+	defer source.Done()
 	var frame = make(DataFrame, source.frameBytes)
 	var nextFrame uint64
 	for f := 0; f < 4; f++ {
@@ -53,9 +57,6 @@ func TestSigpipe(t *testing.T) {
 			t.Errorf("Should have error, got frame %v", frame)
 		}
 	}
-	r.Close()
-	source.Done()
-	CloseAllSources()
 }
 
 func TestEmptySource(t *testing.T) {
@@ -68,7 +69,9 @@ func TestEmptySource(t *testing.T) {
 		<-closeNow
 		w.Close()
 	}()
-	source := GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+	sm := NewSourceMap()
+	defer sm.Close()
+	source := sm.GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    false,
@@ -98,7 +101,6 @@ func TestEmptySource(t *testing.T) {
 	}
 	source.Done()
 	r.Close()
-	CloseAllSources()
 }
 
 func failUnless(t *testing.T, ms time.Duration, ok <-chan bool) {
@@ -163,7 +165,9 @@ func TestSourceFilter(t *testing.T) {
 	}
 	defer func() { delete(Filters, "MOCK") }()
 	fakeFile, sendFake, _ := DataFaker(t)
-	source := GetSource(fakeFile, &Config{
+	sm := NewSourceMap()
+	defer sm.Close()
+	source := sm.GetSource(fakeFile, &Config{
 		SourceBuffer: 5,
 		FrameBytes:   4,
 		CloseIdle:    true,
@@ -203,7 +207,9 @@ func TestSourceFilter(t *testing.T) {
 
 func TestSentEqualsReceived(t *testing.T) {
 	fakeData, wantMore, sentData := DataFaker(t)
-	source := GetSource(fakeData, &Config{
+	sm := NewSourceMap()
+	defer sm.Close()
+	source := sm.GetSource(fakeData, &Config{
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    true,
@@ -245,15 +251,16 @@ func TestSentEqualsReceived(t *testing.T) {
 		t.Errorf("want %d != rcvd %d", len(wantData), len(rcvdData))
 	}
 	source.Done()
-	CloseAllSources()
 }
 
 func TestHeader(t *testing.T) {
 	headerSize := uint64(64)
 	nClients := 5
+	sm := NewSourceMap()
+	sm.Close()
 	sources := make(chan *Source, nClients)
 	for i := 0; i < nClients; i++ {
-		sources <- GetSource("/dev/urandom", &Config{
+		sources <- sm.GetSource("/dev/urandom", &Config{
 			SourceBuffer: 5,
 			FrameBytes:   65536,
 			HeaderBytes:  headerSize,
@@ -265,6 +272,7 @@ func TestHeader(t *testing.T) {
 	for i := 0; i < nClients; i++ {
 		h := make([]byte, headerSize)
 		source := <-sources
+		defer source.Done()
 		err := source.GetHeader(h)
 		if err != nil {
 			t.Error(err)
@@ -288,22 +296,24 @@ func TestHeader(t *testing.T) {
 				break
 			}
 		}
-		source.Done()
 	}
-	CloseAllSources()
 }
 
 func TestContentEqual(t *testing.T) {
-	source := GetSource("/dev/urandom", &Config{
-		SourceBuffer: 32,
-		FrameBytes:   65536,
-		CloseIdle:    true,
-	})
 	nConsumers := 10
 	done := make(chan uint64, nConsumers)
 	tab := crc64.MakeTable(crc64.ECMA)
+	sm := NewSourceMap()
+	defer sm.Close()
 	for i := 0; i < nConsumers; i++ {
 		go func() {
+			source := sm.GetSource("/dev/urandom", &Config{
+				SourceBuffer: 32,
+				FrameBytes:   65536,
+				CloseIdle:    true,
+				Reopen:       false,
+			})
+			defer source.Done()
 			var hash uint64
 			defer func() { done <- hash }()
 			var frame = make(DataFrame, source.frameBytes)
@@ -326,7 +336,6 @@ func TestContentEqual(t *testing.T) {
 			t.Errorf("hash mismatch: h0=%x, h%d=%x", h0, i, hi)
 		}
 	}
-	source.Done()
 }
 
 // 32s of CD audio, 1s per frame, 1000 consumers
@@ -383,7 +392,10 @@ func BenchmarkSourceBigBuffer(b *testing.B) {
 
 func benchSource(b *testing.B, nConsumers int, c Config) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
-	source := GetSource("/dev/zero", &c)
+	sm := NewSourceMap()
+	defer sm.Close()
+	source := sm.GetSource("/dev/zero", &c)
+	defer source.Done()
 	wg := &sync.WaitGroup{}
 	wg.Add(nConsumers)
 	for c := 0; c < nConsumers; c++ {
@@ -393,7 +405,6 @@ func benchSource(b *testing.B, nConsumers int, c Config) {
 		}(c)
 	}
 	wg.Wait()
-	CloseAllSources()
 }
 
 func consume(b *testing.B, source *Source, label interface{}) {

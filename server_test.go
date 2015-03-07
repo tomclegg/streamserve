@@ -16,7 +16,6 @@ import (
 var validAddr = regexp.MustCompile(`^(\[[0-9a-f:\.]+\]|[0-9a-f\.]+):([0-9]+)$`)
 
 func TestServerListeningAddr(t *testing.T) {
-	defer CloseAllSources()
 	listening := make(chan string)
 	srv := &Server{}
 	go func() {
@@ -39,7 +38,6 @@ func TestServerListeningAddr(t *testing.T) {
 }
 
 func TestServerStopsIfCantReopen(t *testing.T) {
-	defer CloseAllSources()
 	listening := make(chan string, 1)
 	srv := &Server{}
 	go srv.Run(&Config{
@@ -65,7 +63,6 @@ func TestServerStopsIfCantReopen(t *testing.T) {
 }
 
 func TestClientRateSpread(t *testing.T) {
-	defer CloseAllSources()
 	nClients := 1000
 	bytesRcvd := uint64(0)
 	stopAll := false
@@ -158,7 +155,6 @@ func devZeroToClients(b testing.B, nClients int, nBytesPerClient int) {
 	}
 	clientwg.Wait()
 	srv.Close()
-	CloseAllSources()
 	// Wait for server to stop
 	<-listening
 }
