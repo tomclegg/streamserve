@@ -2,10 +2,13 @@ package main
 
 import (
 	"fmt"
+	"io"
 	"io/ioutil"
 	"net/http"
+	"math/rand"
 	"regexp"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -13,6 +16,7 @@ import (
 var validAddr = regexp.MustCompile(`^(\[[0-9a-f:\.]+\]|[0-9a-f\.]+):([0-9]+)$`)
 
 func TestServerListeningAddr(t *testing.T) {
+	defer CloseAllSources()
 	listening := make(chan string)
 	srv := &Server{}
 	go func() {
@@ -30,12 +34,12 @@ func TestServerListeningAddr(t *testing.T) {
 		t.Errorf("Invalid address from listening channel: %s", addr)
 	}
 	srv.Close()
-	CloseAllSources()
 	// Wait for server to stop
 	<-listening
 }
 
 func TestServerStopsIfCantReopen(t *testing.T) {
+	defer CloseAllSources()
 	listening := make(chan string, 1)
 	srv := &Server{}
 	go srv.Run(&Config{
@@ -58,6 +62,62 @@ func TestServerStopsIfCantReopen(t *testing.T) {
 			t.Errorf("listening channel expect '', got %v", addr)
 		}
 	}
+}
+
+func TestClientRateSpread(t *testing.T) {
+	defer CloseAllSources()
+	nClients := 1000
+	bytesRcvd := uint64(0)
+	stopAll := false
+	listening := make(chan string, 1)
+	srv := &Server{}
+	go srv.Run(&Config{
+		Addr:            ":0",
+		CloseIdle:       true,
+		FrameBytes:      1<<10,
+		Path:            "/dev/urandom",
+		Reopen:          false,
+		SourceBandwidth: 1<<26, // 64 MiB/s
+		SourceBuffer:    1<<8,
+	}, listening)
+	allConnected := make(chan bool)
+	nClientsConnected := int64(0)
+	addr := <-listening
+	for i := 0; i < nClients; i++ {
+		go func() {
+			bandwidth := (rand.Int() & 0x3fffff)+(1<<22) // 4..8 MiB/s
+			resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
+			if int64(nClients) == atomic.AddInt64(&nClientsConnected, 1) {
+				allConnected <- true
+			}
+			defer func() {
+				if 0 == atomic.AddInt64(&nClientsConnected, -1) {
+					allConnected <- false
+				}
+			}()
+			if err != nil {
+				t.Fatal(err)
+			}
+			buf := make([]byte, 1<<8)
+			tick := time.NewTicker(time.Duration(int(time.Second) * len(buf) / bandwidth)).C
+			for !stopAll {
+				<-tick
+				n, err := io.ReadFull(resp.Body, buf)
+				atomic.AddUint64(&bytesRcvd, uint64(n))
+				if err != nil && err != io.ErrUnexpectedEOF && err != io.EOF {
+					t.Fatal(err)
+				}
+			}
+		}()
+	}
+	<-allConnected
+	<-time.After(3*time.Second)
+	stopAll = true
+	srv.Close()
+	<-allConnected
+	t.Logf("Received %d bytes", bytesRcvd)
+	// Wait for server to stop
+	<-listening
 }
 
 func BenchmarkServer128ClientsGetZero(b *testing.B) {
