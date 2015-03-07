@@ -80,23 +80,21 @@ func TestClientRateSpread(t *testing.T) {
 	allConnected := make(chan bool)
 	nClientsConnected := int64(0)
 	addr := <-listening
+	clientwg := sync.WaitGroup{}
+	clientwg.Add(nClients)
 	for i := 0; i < nClients; i++ {
 		go func() {
+			defer clientwg.Done()
 			bandwidth := (rand.Int() & 0x3fffff)+(1<<22) // 4..8 MiB/s
 			resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
 			if int64(nClients) == atomic.AddInt64(&nClientsConnected, 1) {
 				allConnected <- true
 			}
-			defer func() {
-				if 0 == atomic.AddInt64(&nClientsConnected, -1) {
-					allConnected <- false
-				}
-			}()
 			if err != nil {
 				t.Fatal(err)
 			}
 			buf := make([]byte, 1<<8)
-			tick := time.NewTicker(time.Duration(int(time.Second) * len(buf) / bandwidth)).C
+			tick := time.NewTicker(time.Duration(time.Second * time.Duration(len(buf)) / time.Duration(bandwidth))).C
 			for !stopAll {
 				<-tick
 				n, err := io.ReadFull(resp.Body, buf)
@@ -111,7 +109,7 @@ func TestClientRateSpread(t *testing.T) {
 	<-time.After(3*time.Second)
 	stopAll = true
 	srv.Close()
-	<-allConnected
+	clientwg.Wait()
 	t.Logf("Received %d bytes", bytesRcvd)
 	// Wait for server to stop
 	<-listening
