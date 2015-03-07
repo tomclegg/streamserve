@@ -151,7 +151,7 @@ func (s *Source) run() {
 	}
 	var ticker *time.Ticker
 	if s.bandwidth > 0 {
-		ticker = time.NewTicker(time.Duration(uint64(1000000000) * s.frameBytes / s.bandwidth))
+		ticker = time.NewTicker(time.Duration(uint64(time.Second) * s.frameBytes / s.bandwidth))
 	}
 	var statTicker <-chan time.Time
 	if s.statLogInterval > 0 {
