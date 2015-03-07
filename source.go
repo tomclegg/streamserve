@@ -201,6 +201,9 @@ func (s *Source) LogStats() {
 }
 
 func (s *Source) GetHeader(buf []byte) (err error) {
+	if s.HeaderBytes == 0 {
+		return nil
+	}
 	s.Cond.L.Lock()
 	defer s.Cond.L.Unlock()
 	for uint64(len(s.header)) < s.HeaderBytes && !s.gone {
@@ -210,7 +213,7 @@ func (s *Source) GetHeader(buf []byte) (err error) {
 		err = io.EOF
 		return
 	}
-	if cap(buf) < len(s.header) {
+	if len(buf) < len(s.header) {
 		err = errors.New("Caller's header buffer is too small.")
 		return
 	}
