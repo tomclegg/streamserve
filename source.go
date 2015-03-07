@@ -94,7 +94,9 @@ func (s *Source) readNextFrame() (err error) {
 	defer s.frameLocks[bufPos].Unlock()
 	s.frames[bufPos] = s.frames[bufPos][:cap(s.frames[bufPos])]
 	for frameEnd := 0; frameEnd < int(s.frameBytes); {
-		if len(s.todo) > 0 {
+		if s.gone {
+			return io.EOF
+		} else if len(s.todo) > 0 {
 			copy(s.frames[bufPos][frameEnd:], s.todo)
 			frameEnd += len(s.todo)
 			s.todo = s.todo[:0]
@@ -105,6 +107,12 @@ func (s *Source) readNextFrame() (err error) {
 				s.statBytesIn += uint64(got)
 			} else if err != nil {
 				return err
+			} else {
+				// A Reader can return 0 bytes with
+				// err==nil. Wait a bit, to avoid
+				// spinning too hard.
+				time.Sleep(10 * time.Millisecond)
+				continue
 			}
 		}
 		frameStart := 0
