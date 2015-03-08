@@ -90,19 +90,12 @@ func main() {
 	if err := config.Check(); err != nil {
 		log.Fatalf("Invalid configuration: %s", err)
 	}
-	listening := make(chan string)
-	go func() {
-		for addr := range listening {
-			if addr == "" {
-				log.Print("Stopped listening")
-			} else {
-				log.Printf("Listening at %s", addr)
-			}
-		}
-	}()
 	srv := &Server{}
-	err := srv.Run(&config, listening)
-	if err != nil {
+	if err := srv.Run(&config); err != nil {
+		log.Fatal(err)
+	}
+	log.Printf("Listening at %s", srv.Addr)
+	if err := srv.Wait(); err != nil {
 		log.Fatal(err)
 	}
 }

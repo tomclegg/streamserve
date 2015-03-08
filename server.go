@@ -6,25 +6,32 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"sync"
 	"syscall"
 	"time"
 )
 
 type Server struct {
 	http.Server
-	config    Config
-	listener  *net.TCPListener
-	shutdown  bool
-	sourceMap *SourceMap
+	Addr       string // host:port listening ("" if not listening yet)
+	Err        error  // error encountered while running server (nil if still listening)
+	config     Config
+	listener   *net.TCPListener
+	shutdown   bool // shutdown was requested by Close()
+	done       bool // server is no longer listening
+	*sync.Cond      // can wait for done to become true
+	sourceMap  *SourceMap
 }
 
 // FlushyResponseWriter wraps http.ResponseWriter, calling Flush()
-// after each Write(). Write() panics if the wrapped ResponseWriter
-// does not implement the http.Flusher interface.
+// after each Write() to minimize buffering on our (server) end of the
+// connection.
 type FlushyResponseWriter struct {
 	http.ResponseWriter
 }
 
+// Write sends data to the client. It panics if the underlying
+// ResponseWriter does not implement http.Flusher.
 func (writer *FlushyResponseWriter) Write(data []byte) (int, error) {
 	defer func() {
 		flusher, ok := writer.ResponseWriter.(http.Flusher)
@@ -36,17 +43,13 @@ func (writer *FlushyResponseWriter) Write(data []byte) (int, error) {
 	return writer.ResponseWriter.Write(data)
 }
 
-func (srv *Server) Run(c *Config, listening chan<- string) (err error) {
+// Run starts an HTTP server with the given configuration.
+func (srv *Server) Run(c *Config) (err error) {
 	// c.Check() is just for tests -- main() has already done this.
 	if err = c.Check(); err != nil {
 		log.Fatal(err)
 	}
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(c.CPUMax))
-	defer func() {
-		if listening != nil {
-			listening <- ""
-		}
-	}()
 	addr, err := net.ResolveTCPAddr("tcp", c.Addr)
 	if err != nil {
 		return
@@ -55,9 +58,7 @@ func (srv *Server) Run(c *Config, listening chan<- string) (err error) {
 	if err != nil {
 		return
 	}
-	if listening != nil {
-		listening <- srv.listener.Addr().String()
-	}
+	srv.Addr = srv.listener.Addr().String()
 	srv.sourceMap = NewSourceMap()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
@@ -84,17 +85,42 @@ func (srv *Server) Run(c *Config, listening chan<- string) (err error) {
 		}
 	})
 	srv.Handler = mux
-	err = srv.Serve(tcpKeepAliveListener{srv.listener})
-	if srv.shutdown {
-		err = nil
-	}
-	return
+	mutex := &sync.RWMutex{}
+	srv.Cond = sync.NewCond(mutex.RLocker())
+	go func() {
+		err = srv.Serve(tcpKeepAliveListener{srv.listener})
+		if !srv.shutdown {
+			srv.Err = err
+		}
+		log.Print("derpz")
+		mutex.Lock()
+		srv.done = true
+		srv.Cond.Broadcast()
+		mutex.Unlock()
+	}()
+	return nil
 }
 
-func (srv *Server) Close() {
+// Wait returns when the server stops listening. If the server stops
+// because Close() was called, it returns nil. If it stops for some
+// other reason, it returns the error that caused it to stop.
+func (srv *Server) Wait() error {
+	srv.Cond.L.Lock()
+	defer srv.Cond.L.Unlock()
+	for !srv.done {
+		log.Print("waiting")
+		srv.Cond.Wait()
+	}
+	return srv.Err
+}
+
+// Close shuts down the server. It returns an error if the server
+// already stopped for some reason other than a prior call to Close().
+func (srv *Server) Close() error {
 	srv.shutdown = true
 	srv.listener.Close()
 	srv.sourceMap.Close()
+	return srv.Wait()
 }
 
 // Copied from net/http because not exported.

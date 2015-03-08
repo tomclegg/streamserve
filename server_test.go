@@ -16,31 +16,21 @@ import (
 var validAddr = regexp.MustCompile(`^(\[[0-9a-f:\.]+\]|[0-9a-f\.]+):([0-9]+)$`)
 
 func TestServerListeningAddr(t *testing.T) {
-	listening := make(chan string)
 	srv := &Server{}
-	go func() {
-		err := srv.Run(&Config{Addr: ":0", FrameBytes: 1, Path: "/dev/zero", SourceBuffer: 4}, listening)
-		if err != nil {
-			t.Fatal(err)
-		}
-	}()
-	addr, ok := <-listening
-	if !ok {
-		t.Fatal("No address on listening channel")
+	err := srv.Run(&Config{Addr: ":0", FrameBytes: 1, Path: "/dev/zero", SourceBuffer: 4})
+	if err != nil {
+		t.Fatal(err)
 	}
-	t.Logf("Listening: %s", addr)
-	if !validAddr.MatchString(addr) {
-		t.Errorf("Invalid address from listening channel: %s", addr)
+	t.Logf("Listening: %s", srv.Addr)
+	if !validAddr.MatchString(srv.Addr) {
+		t.Errorf("Invalid address from listening channel: %s", srv.Addr)
 	}
 	srv.Close()
-	// Wait for server to stop
-	<-listening
 }
 
 func TestServerStopsIfCantReopen(t *testing.T) {
-	listening := make(chan string, 1)
 	srv := &Server{}
-	go srv.Run(&Config{
+	srv.Run(&Config{
 		Addr:           ":0",
 		CloseIdle:      true,
 		FrameBytes:     16,
@@ -48,27 +38,28 @@ func TestServerStopsIfCantReopen(t *testing.T) {
 		Path:           "/dev/urandom",
 		Reopen:         false,
 		SourceBuffer:   4,
-	}, listening)
-	resp, err := http.Get(fmt.Sprintf("http://%s/", <-listening))
+	})
+	resp, err := http.Get(fmt.Sprintf("http://%s/", srv.Addr))
 	body, _ := ioutil.ReadAll(resp.Body)
 	t.Logf("GET: resp %v, err %v", body, err)
+	done := make(chan bool)
+	go func() {
+		srv.Wait()
+		done <- true
+	}()
 	select {
 	case <-time.After(time.Second):
 		t.Error("Server should have shut down within 1s of client disconnect")
-	case addr := <-listening:
-		if addr != "" {
-			t.Errorf("listening channel expect '', got %v", addr)
-		}
+	case <-done:
 	}
 }
 
 func TestClientRateSpread(t *testing.T) {
-	nClients := 1000
+	nClients := 500
 	bytesRcvd := uint64(0)
 	stopAll := false
-	listening := make(chan string, 1)
 	srv := &Server{}
-	go srv.Run(&Config{
+	srv.Run(&Config{
 		Addr:            ":0",
 		CloseIdle:       true,
 		FrameBytes:      1 << 10,
@@ -76,17 +67,16 @@ func TestClientRateSpread(t *testing.T) {
 		Reopen:          false,
 		SourceBandwidth: 1 << 26, // 64 MiB/s
 		SourceBuffer:    1 << 8,
-	}, listening)
+	})
 	allConnected := make(chan bool)
 	nClientsConnected := int64(0)
-	addr := <-listening
 	clientwg := sync.WaitGroup{}
 	clientwg.Add(nClients)
 	for i := 0; i < nClients; i++ {
 		go func() {
 			defer clientwg.Done()
 			bandwidth := (rand.Int() & 0x3fffff) + (1 << 22) // 4..8 MiB/s
-			resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
+			resp, err := http.Get(fmt.Sprintf("http://%s/", srv.Addr))
 			if int64(nClients) == atomic.AddInt64(&nClientsConnected, 1) {
 				allConnected <- true
 			}
@@ -111,8 +101,6 @@ func TestClientRateSpread(t *testing.T) {
 	srv.Close()
 	clientwg.Wait()
 	t.Logf("Received %d bytes", bytesRcvd)
-	// Wait for server to stop
-	<-listening
 }
 
 func BenchmarkServer128ClientsGetZero(b *testing.B) {
@@ -120,21 +108,17 @@ func BenchmarkServer128ClientsGetZero(b *testing.B) {
 }
 
 func devZeroToClients(b testing.B, nClients int, nBytesPerClient int) {
-	listening := make(chan string)
 	srv := &Server{}
-	go func() {
-		err := srv.Run(&Config{Addr: ":0", FrameBytes: 2 << 11, Path: "/dev/zero", SourceBuffer: 2 << 11, StatLogInterval: time.Duration(time.Second)}, listening)
-		if err != nil {
-			b.Fatal(err)
-		}
-	}()
-	addr, _ := <-listening
+	err := srv.Run(&Config{Addr: ":0", FrameBytes: 2 << 11, Path: "/dev/zero", SourceBuffer: 2 << 11, StatLogInterval: time.Duration(time.Second)})
+	if err != nil {
+		b.Fatal(err)
+	}
 	clientwg := sync.WaitGroup{}
 	clientwg.Add(nClients)
 	for i := 0; i < nClients; i++ {
 		go func(i int) {
 			defer clientwg.Done()
-			resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
+			resp, err := http.Get(fmt.Sprintf("http://%s/", srv.Addr))
 			if err != nil {
 				b.Errorf("Client %d: %s", i, err)
 				return
@@ -154,5 +138,4 @@ func devZeroToClients(b testing.B, nClients int, nBytesPerClient int) {
 	clientwg.Wait()
 	srv.Close()
 	// Wait for server to stop
-	<-listening
 }
