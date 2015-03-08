@@ -1,5 +1,6 @@
 # TODO
 
+* Make -source-bandwidth work correctly with variable length frames.
 * Multiple streams (pay attention to client URI).
 * Better logging.
 * MIME types.
