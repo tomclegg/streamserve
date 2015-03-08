@@ -4,8 +4,8 @@ import (
 	"fmt"
 	"io"
 	"io/ioutil"
-	"net/http"
 	"math/rand"
+	"net/http"
 	"regexp"
 	"sync"
 	"sync/atomic"
@@ -71,11 +71,11 @@ func TestClientRateSpread(t *testing.T) {
 	go srv.Run(&Config{
 		Addr:            ":0",
 		CloseIdle:       true,
-		FrameBytes:      1<<10,
+		FrameBytes:      1 << 10,
 		Path:            "/dev/urandom",
 		Reopen:          false,
-		SourceBandwidth: 1<<26, // 64 MiB/s
-		SourceBuffer:    1<<8,
+		SourceBandwidth: 1 << 26, // 64 MiB/s
+		SourceBuffer:    1 << 8,
 	}, listening)
 	allConnected := make(chan bool)
 	nClientsConnected := int64(0)
@@ -85,7 +85,7 @@ func TestClientRateSpread(t *testing.T) {
 	for i := 0; i < nClients; i++ {
 		go func() {
 			defer clientwg.Done()
-			bandwidth := (rand.Int() & 0x3fffff)+(1<<22) // 4..8 MiB/s
+			bandwidth := (rand.Int() & 0x3fffff) + (1 << 22) // 4..8 MiB/s
 			resp, err := http.Get(fmt.Sprintf("http://%s/", addr))
 			if int64(nClients) == atomic.AddInt64(&nClientsConnected, 1) {
 				allConnected <- true
@@ -106,7 +106,7 @@ func TestClientRateSpread(t *testing.T) {
 		}()
 	}
 	<-allConnected
-	<-time.After(3*time.Second)
+	<-time.After(3 * time.Second)
 	stopAll = true
 	srv.Close()
 	clientwg.Wait()
