@@ -88,14 +88,14 @@ func (s *Source) openInput() (err error) {
 	return
 }
 
-func (s *Source) readNextFrame() (err error) {
+func (s *Source) readNextFrame() (okFrameSize int, err error) {
 	bufPos := s.nextFrame % uint64(cap(s.frames))
 	s.frameLocks[bufPos].Lock()
 	defer s.frameLocks[bufPos].Unlock()
 	s.frames[bufPos] = s.frames[bufPos][:cap(s.frames[bufPos])]
 	for frameEnd := 0; frameEnd < int(s.frameBytes); {
 		if s.gone {
-			return io.EOF
+			return 0, io.EOF
 		} else if len(s.todo) > 0 {
 			copy(s.frames[bufPos][frameEnd:], s.todo)
 			frameEnd += len(s.todo)
@@ -106,7 +106,7 @@ func (s *Source) readNextFrame() (err error) {
 				frameEnd += got
 				s.statBytesIn += uint64(got)
 			} else if err != nil {
-				return err
+				return 0, err
 			} else {
 				// A Reader can return 0 bytes with
 				// err==nil. Wait a bit, to avoid
@@ -117,7 +117,6 @@ func (s *Source) readNextFrame() (err error) {
 		}
 		frameStart := 0
 		for err != ShortFrame && frameStart < frameEnd {
-			var okFrameSize int
 			okFrameSize, err = s.filter(s.frames[bufPos][frameStart:frameEnd], &s.filterContext)
 			switch err {
 			case nil:
@@ -127,7 +126,7 @@ func (s *Source) readNextFrame() (err error) {
 					copy(s.frames[bufPos], s.frames[bufPos][frameStart:frameStart+okFrameSize])
 				}
 				s.frames[bufPos] = s.frames[bufPos][:okFrameSize]
-				return nil
+				return
 			case InvalidFrame:
 				// Try filter again on next byte
 				frameStart++
@@ -141,6 +140,7 @@ func (s *Source) readNextFrame() (err error) {
 		frameEnd -= frameStart
 		frameStart = 0
 		err = nil
+		okFrameSize = 0
 	}
 	return
 }
@@ -160,6 +160,7 @@ func (s *Source) run() {
 	if s.bandwidth > 0 {
 		ticker = time.NewTicker(time.Duration(uint64(time.Second) * s.frameBytes / s.bandwidth))
 	}
+	var toThrottle int	// #bytes read from source but not yet throttled by ticker
 	var statTicker <-chan time.Time
 	if s.statLogInterval > 0 {
 		statTicker = (time.NewTicker(s.statLogInterval)).C
@@ -167,7 +168,8 @@ func (s *Source) run() {
 		statTicker = make(chan time.Time)
 	}
 	for !s.gone {
-		if err = s.readNextFrame(); err != nil {
+		var frameSize int
+		if frameSize, err = s.readNextFrame(); err != nil {
 			log.Printf("source %s read: %s", s.path, err)
 			s.input.Close()
 			s.input = nil
@@ -182,7 +184,11 @@ func (s *Source) run() {
 		s.nextFrame++
 		s.Cond.Broadcast()
 		if ticker != nil {
-			<-ticker.C
+			toThrottle += frameSize
+			for toThrottle >= int(s.frameBytes) {
+				<-ticker.C
+				toThrottle -= int(s.frameBytes)
+			}
 		}
 		select {
 		case <-statTicker:

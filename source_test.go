@@ -257,12 +257,78 @@ func TestSentEqualsReceived(t *testing.T) {
 	source.Done()
 }
 
+func TestBandwidthVariableFrameSize(t *testing.T) {
+	frameSizes := []int{47, 128, 1024, 2048, 8192} // arbitrary, with some small and some big
+	var fsIndex int
+	Filters["MOCK"] = func(frame []byte, context *interface{}) (want int, err error) {
+		want = frameSizes[fsIndex]
+		if len(frame) < want {
+			err = ShortFrame
+		} else {
+			fsIndex = (fsIndex + 1) % len(frameSizes)
+		}
+		return
+	}
+	defer func() { delete(Filters, "MOCK") }()
+	doBandwidthTests(t, &Config{
+		SourceBuffer:    16,
+		FrameBytes:      8192,
+		CloseIdle:       true,
+		Reopen:          false,
+		FrameFilter:     "MOCK",
+	})
+}
+
+func TestBandwidth(t *testing.T) {
+	doBandwidthTests(t, &Config{
+		SourceBuffer:    16,
+		FrameBytes:      8192,
+		CloseIdle:       true,
+		Reopen:          false,
+	})
+}
+
+func doBandwidthTests(t *testing.T, config *Config) {
+	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
+	for _, bw := range []uint64{100000, 1000000} {
+		config.SourceBandwidth = bw
+		sm := NewSourceMap()
+		src := sm.GetSource("/dev/urandom", config)
+		var frame = make(DataFrame, src.frameBytes)
+		var nextFrame uint64
+		var got, gotFrames uint64
+		done := time.After(time.Second)
+	reading:
+		for {
+			select {
+			case <-done:
+				break reading
+			default:
+				if _, err := src.Next(&nextFrame, &frame); err != nil {
+					if err != io.EOF {
+						t.Error(err)
+					}
+					break reading
+				}
+				gotFrames++
+				got += uint64(len(frame))
+			}
+		}
+		bpf := got / gotFrames
+		t.Log("Requested", bw, "B/s, got", got, "B in 1s (avg", bpf, "bpf)")
+		if got > bw * 12 / 10 || got < bw * 8 / 10 {
+			t.Error("Bandwidth out of acceptable range")
+		}
+		sm.Close()
+	}
+}
+
 func TestHeader(t *testing.T) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	headerSize := uint64(64)
 	nClients := 5
 	sm := NewSourceMap()
-	sm.Close()
+	defer sm.Close()
 	sources := make(chan *Source, nClients)
 	for i := 0; i < nClients; i++ {
 		sources <- sm.GetSource("/dev/urandom", &Config{
