@@ -341,17 +341,17 @@ func TestHeader(t *testing.T) {
 		h := make([]byte, headerSize)
 		rdr := <-rdrs
 		defer rdr.Close()
-		err := rdr.GetHeader(h)
+		n, err := rdr.Read(h)
 		if err != nil {
 			t.Error(err)
 		} else if h0 == nil {
 			h0 = h
-		} else if bytes.Compare(h, h0) != 0 {
+		} else if bytes.Compare(h[:n], h0) != 0 {
 			t.Errorf("Header mismatch: %v != %v", h0, h)
-		} else if bytes.Compare(h, empty) == 0 {
+		} else if bytes.Compare(h[:n], empty) == 0 {
 			t.Error("Header appears uninitialized")
-		} else if uint64(len(h)) != headerSize {
-			t.Errorf("Header size mismatch: %d != %d", len(h), headerSize)
+		} else if uint64(n) != headerSize {
+			t.Errorf("Header size mismatch: %d != %d", n, headerSize)
 		}
 		var frame = make(DataFrame, 65536)
 		for f := 0; f < 6; f++ {

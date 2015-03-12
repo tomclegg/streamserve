@@ -207,9 +207,9 @@ func (s *Source) LogStats() {
 	log.Printf("source %s stats: %d in (%d invalid) %d out", s.path, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
 }
 
-func (s *Source) GetHeader(buf []byte) error {
+func (s *Source) GetHeader(buf []byte) (int, error) {
 	if s.HeaderBytes == 0 {
-		return nil
+		return 0, nil
 	}
 	s.Cond.L.Lock()
 	defer s.Cond.L.Unlock()
@@ -217,14 +217,14 @@ func (s *Source) GetHeader(buf []byte) error {
 		s.Cond.Wait()
 	}
 	if uint64(len(s.header)) < s.HeaderBytes {
-		return io.EOF
+		return 0, io.EOF
 	}
 	if len(buf) < len(s.header) {
-		return BufferTooSmall
+		return 0, BufferTooSmall
 	}
 	atomic.AddUint64(&s.statBytesOut, s.HeaderBytes)
 	copy(buf, s.header)
-	return nil
+	return int(s.HeaderBytes), nil
 }
 
 // NewReader returns a SourceReader that reads frames from this source.

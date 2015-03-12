@@ -10,6 +10,7 @@ import (
 // reads exactly one complete frame, or returns an error.
 type SourceReader struct {
 	source        *Source
+	didHeader     bool
 	nextFrame     uint64
 	FramesRead    uint64
 	FramesSkipped uint64 // A frame is "skipped" if an earlier
@@ -21,10 +22,6 @@ type SourceReader struct {
 }
 
 var BufferTooSmall = errors.New("caller's buffer is too small")
-
-func (sr *SourceReader) GetHeader(buf []byte) error {
-	return sr.source.GetHeader(buf)
-}
 
 func (sr *SourceReader) Read(buf []byte) (int, error) {
 	// We avoid doing more locking than absolutely necessary here,
@@ -41,6 +38,12 @@ func (sr *SourceReader) Read(buf []byte) (int, error) {
 	// blocking _every_ readNextFrame, which would happen if we
 	// held a lock on s.nextFrame here).
 	s := sr.source
+	if !sr.didHeader {
+		sr.didHeader = true
+		if sr.source.HeaderBytes > 0 {
+			return sr.source.GetHeader(buf)
+		}
+	}
 	if s.clientMaxBytes > 0 && sr.BytesRead >= s.clientMaxBytes {
 		return 0, io.EOF
 	}
