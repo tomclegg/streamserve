@@ -62,9 +62,10 @@ func (srv *Server) Run(c *Config) (err error) {
 	srv.sourceMap = NewSourceMap()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
-		src := srv.sourceMap.GetSource(c.Path, c)
+		startTime := time.Now()
+		sreader := srv.sourceMap.NewReader(c.Path, c)
 		fwriter := &FlushyResponseWriter{writer}
-		err := NewSink(req.RemoteAddr, fwriter, src, c).Run()
+		wroteBytes, err := io.Copy(fwriter, sreader)
 		if e, ok := err.(*net.OpError); ok {
 			if e, ok := e.Err.(syscall.Errno); ok {
 				if e == syscall.ECONNRESET {
@@ -72,14 +73,17 @@ func (srv *Server) Run(c *Config) (err error) {
 					err = nil
 				}
 			}
-		} else if err == io.EOF {
-			// Not really an error.
-			err = nil
 		}
 		if err != nil {
 			log.Printf("client %s error: %s", req.RemoteAddr, err)
 		}
-		if src.gone && src.path == c.Path && !c.Reopen {
+		log.Println("client", req.RemoteAddr,
+			"--", time.Since(startTime).String(), "elapsed",
+			wroteBytes, "bytes",
+			sreader.FramesRead, "frames +",
+			sreader.FramesSkipped, "skipped")
+		sreader.Close()
+		if srv.sourceMap.Count() == 0 && !c.Reopen {
 			// The only source path has ended and can't be reopened.
 			srv.Close()
 		}
@@ -92,7 +96,6 @@ func (srv *Server) Run(c *Config) (err error) {
 		if !srv.shutdown {
 			srv.Err = err
 		}
-		log.Print("derpz")
 		mutex.Lock()
 		srv.done = true
 		srv.Cond.Broadcast()

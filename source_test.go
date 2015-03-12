@@ -30,32 +30,32 @@ func TestSigpipe(t *testing.T) {
 	go cmd.Wait()
 	sm := NewSourceMap()
 	defer sm.Close()
-	source := sm.GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+	rdr := sm.NewReader(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    false,
 		Reopen:       true,
 	})
-	defer source.Done()
-	var frame = make(DataFrame, source.frameBytes)
-	var nextFrame uint64
+	defer rdr.Close()
+	var frame = make(DataFrame, 16)
 	for f := 0; f < 4; f++ {
-		if _, err = source.Next(&nextFrame, &frame); err != nil {
+		if _, err = rdr.Read(frame); err != nil {
 			t.Error(err)
 			break
 		}
 	}
-	done := make(chan error, 1)
+	done := make(chan bool, 1)
+	var got int
 	go func() {
-		_, err = source.Next(&nextFrame, &frame)
-		done <- err
+		got, err = rdr.Read(frame)
+		done <- true
 	}()
 	select {
 	case <-time.After(time.Second):
 		t.Error("Should have given up within 1s of SIGCHLD")
-	case err = <-done:
+	case <-done:
 		if err == nil {
-			t.Errorf("Should have error, got frame %v", frame)
+			t.Errorf("Should have error, got frame %v", frame[:got])
 		}
 	}
 }
@@ -73,17 +73,16 @@ func TestEmptySource(t *testing.T) {
 	}()
 	sm := NewSourceMap()
 	defer sm.Close()
-	source := sm.GetSource(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
+	rdr := sm.NewReader(fmt.Sprintf("/dev/fd/%d", r.Fd()), &Config{
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    false,
 		Reopen:       false,
 	})
-	var frame = make(DataFrame, source.frameBytes)
-	var nextFrame uint64
+	var frame = make(DataFrame, 16)
 	done := make(chan error, 1)
 	go func() {
-		_, err := source.Next(&nextFrame, &frame)
+		_, err := rdr.Read(frame)
 		done <- err
 	}()
 	time.Sleep(time.Millisecond)
@@ -101,7 +100,7 @@ func TestEmptySource(t *testing.T) {
 			t.Errorf("Should have error, got frame %v", frame)
 		}
 	}
-	source.Done()
+	rdr.Close()
 	r.Close()
 }
 
@@ -169,22 +168,20 @@ func TestSourceFilter(t *testing.T) {
 	defer func() { delete(Filters, "MOCK") }()
 	fakeFile, sendFake, _ := DataFaker(t)
 	sm := NewSourceMap()
-	defer sm.Close()
-	source := sm.GetSource(fakeFile, &Config{
+	rdr := sm.NewReader(fakeFile, &Config{
 		SourceBuffer: 5,
 		FrameBytes:   4,
 		CloseIdle:    true,
 		Reopen:       false,
 		FrameFilter:  "MOCK",
 	})
-	var nextFrame uint64
 	var frame = make(DataFrame, 4)
 	expectNext := func(expect []byte, expectErr error) {
-		_, err := source.Next(&nextFrame, &frame)
+		n, err := rdr.Read(frame)
 		if err != expectErr {
-			t.Errorf("Frame %d expected err %s got %s", nextFrame, expectErr, err)
-		} else if err == nil && 0 != bytes.Compare(expect, frame) {
-			t.Errorf("Frame %d expected bytes %v got %v", nextFrame, expect, frame)
+			t.Errorf("Frame %d expected err %s got %s", rdr.nextFrame, expectErr, err)
+		} else if err == nil && 0 != bytes.Compare(expect, frame[:n]) {
+			t.Errorf("Frame %d expected bytes %v got %v", rdr.nextFrame, expect, frame)
 		}
 	}
 	// Our mock filter will pass any frame without a 00.
@@ -199,7 +196,7 @@ func TestSourceFilter(t *testing.T) {
 	fMock <- &expect{[]byte{00, 33, 44, 11}, 0, InvalidFrame}
 	fMock <- &expect{[]byte{33, 44, 11, 22}, 4, nil}
 	expectNext([]byte{33, 44, 11, 22}, nil)
-	source.Done()
+	sm.Close()
 	// TODO: source should give filter a chance to accept the data at EOF, even though it doesn't fill max frame size.
 	// fMock <- &expect{[]byte{33,44}, 1, nil}
 	// fMock <- &expect{[]byte{44}, 1, nil}
@@ -213,20 +210,20 @@ func TestSentEqualsReceived(t *testing.T) {
 	fakeData, wantMore, sentData := DataFaker(t)
 	sm := NewSourceMap()
 	defer sm.Close()
-	source := sm.GetSource(fakeData, &Config{
+	rdr := sm.NewReader(fakeData, &Config{
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    true,
 		Reopen:       false,
 	})
+	defer rdr.Close()
 	var rcvdData = []byte{}
-	var frame = make(DataFrame, source.frameBytes)
-	var nextFrame uint64
+	var frame = make(DataFrame, 16)
 	ok := make(chan bool)
 	wantMore <- 19 // Send one full frame (to make sure we start receiving at frame 0) and a bit extra
 	for f := 100; f > 0; f-- {
 		go func() {
-			if _, err := source.Next(&nextFrame, &frame); err != nil {
+			if _, err := rdr.Read(frame); err != nil {
 				t.Fatal(err)
 			}
 			if len(frame) != 16 {
@@ -244,7 +241,7 @@ func TestSentEqualsReceived(t *testing.T) {
 	}
 	close(wantMore)
 	go func() {
-		if _, err := source.Next(&nextFrame, &frame); err != io.EOF {
+		if _, err := rdr.Read(frame); err != io.EOF {
 			t.Error("Should have got EOF")
 		}
 		ok <- true
@@ -254,7 +251,6 @@ func TestSentEqualsReceived(t *testing.T) {
 	if 0 != bytes.Compare(wantData, rcvdData) {
 		t.Errorf("want %d != rcvd %d", len(wantData), len(rcvdData))
 	}
-	source.Done()
 }
 
 func TestBandwidthVariableFrameSize(t *testing.T) {
@@ -293,9 +289,8 @@ func doBandwidthTests(t *testing.T, config *Config) {
 	for _, bw := range []uint64{100000, 1000000} {
 		config.SourceBandwidth = bw
 		sm := NewSourceMap()
-		src := sm.GetSource("/dev/urandom", config)
-		var frame = make(DataFrame, src.frameBytes)
-		var nextFrame uint64
+		rdr := sm.NewReader("/dev/urandom", config)
+		var frame = make(DataFrame, 16384)
 		var got, gotFrames uint64
 		done := time.After(time.Second)
 	reading:
@@ -304,14 +299,16 @@ func doBandwidthTests(t *testing.T, config *Config) {
 			case <-done:
 				break reading
 			default:
-				if _, err := src.Next(&nextFrame, &frame); err != nil {
+				var n int
+				var err error
+				if n, err = rdr.Read(frame); err != nil {
 					if err != io.EOF {
 						t.Error(err)
 					}
 					break reading
 				}
 				gotFrames++
-				got += uint64(len(frame))
+				got += uint64(n)
 			}
 		}
 		bpf := got / gotFrames
@@ -329,9 +326,9 @@ func TestHeader(t *testing.T) {
 	nClients := 5
 	sm := NewSourceMap()
 	defer sm.Close()
-	sources := make(chan *Source, nClients)
+	rdrs := make(chan *SourceReader, nClients)
 	for i := 0; i < nClients; i++ {
-		sources <- sm.GetSource("/dev/urandom", &Config{
+		rdrs <- sm.NewReader("/dev/urandom", &Config{
 			SourceBuffer: 5,
 			FrameBytes:   65536,
 			HeaderBytes:  headerSize,
@@ -342,9 +339,9 @@ func TestHeader(t *testing.T) {
 	var h0 []byte
 	for i := 0; i < nClients; i++ {
 		h := make([]byte, headerSize)
-		source := <-sources
-		defer source.Done()
-		err := source.GetHeader(h)
+		rdr := <-rdrs
+		defer rdr.Close()
+		err := rdr.GetHeader(h)
 		if err != nil {
 			t.Error(err)
 		} else if h0 == nil {
@@ -356,11 +353,10 @@ func TestHeader(t *testing.T) {
 		} else if uint64(len(h)) != headerSize {
 			t.Errorf("Header size mismatch: %d != %d", len(h), headerSize)
 		}
-		var frame = make(DataFrame, source.frameBytes)
-		var nextFrame uint64
+		var frame = make(DataFrame, 65536)
 		for f := 0; f < 6; f++ {
 			var err error
-			if _, err = source.Next(&nextFrame, &frame); err != nil {
+			if _, err = rdr.Read(frame); err != nil {
 				if err != io.EOF {
 					t.Error(err)
 				}
@@ -381,21 +377,20 @@ func TestContentEqual(t *testing.T) {
 	defer sm.Close()
 	for i := 0; i < nConsumers; i++ {
 		go func() {
-			source := sm.GetSource("/dev/urandom", &Config{
+			rdr := sm.NewReader("/dev/urandom", &Config{
 				SourceBuffer: 32,
 				FrameBytes:   65536,
 				CloseIdle:    true,
 				Reopen:       false,
 			})
-			defer source.Done()
+			defer rdr.Close()
 			var hash uint64
 			defer func() { done <- hash }()
-			var frame = make(DataFrame, source.frameBytes)
-			var nextFrame uint64
+			var frame = make(DataFrame, 65536)
 			for f := 0; f < 130; f++ {
 				var err error
-				if _, err = source.Next(&nextFrame, &frame); err != nil && err != io.EOF {
-					t.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
+				if _, err = rdr.Read(frame); err != nil && err != io.EOF {
+					t.Fatalf("rdr.Read(frame) at frame %d: %s", rdr.nextFrame, err)
 				}
 				hash = crc64.Update(hash, tab, frame)
 			}
@@ -464,30 +459,29 @@ func BenchmarkSourceBigBuffer(b *testing.B) {
 	})
 }
 
-func benchSource(b *testing.B, nConsumers int, c Config) {
+func benchSource(b *testing.B, nConsumers int, conf Config) {
 	defer runtime.GOMAXPROCS(runtime.GOMAXPROCS(runtime.NumCPU()))
 	sm := NewSourceMap()
 	defer sm.Close()
-	source := sm.GetSource("/dev/zero", &c)
-	defer source.Done()
 	wg := &sync.WaitGroup{}
 	wg.Add(nConsumers)
 	for c := 0; c < nConsumers; c++ {
 		go func(c int) {
 			defer wg.Done()
-			consume(b, source, c)
+			rdr := sm.NewReader("/dev/zero", &conf)
+			defer rdr.Close()
+			consume(b, rdr, c)
 		}(c)
 	}
 	wg.Wait()
 }
 
-func consume(b *testing.B, source *Source, label interface{}) {
-	var frame = make(DataFrame, source.frameBytes)
-	var nextFrame uint64
+func consume(b *testing.B, rdr *SourceReader, label interface{}) {
+	var frame = make(DataFrame, rdr.source.frameBytes)
 	for i := uint64(0); i < 10*uint64(b.N); i++ {
-		if _, err := source.Next(&nextFrame, &frame); err != nil {
+		if _, err := rdr.Read(frame); err != nil {
 			if err != io.EOF {
-				b.Fatalf("source.Next(%d, frame): %s", nextFrame, err)
+				b.Fatal("rdr.Read(): ", err)
 			}
 			break
 		}

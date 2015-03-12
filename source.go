@@ -2,7 +2,6 @@ package main
 
 import (
 	"bytes"
-	"errors"
 	"io"
 	"log"
 	"os"
@@ -26,6 +25,7 @@ type Source struct {
 	closeIdle        bool
 	reopen           bool
 	bandwidth        uint64
+	clientMaxBytes   uint64
 	filter           FilterFunc
 	filterContext    interface{}
 	sync.RWMutex     // Must be held while changing nextFrame or gone
@@ -49,6 +49,7 @@ func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 	}
 	s.todo = make(DataFrame, 0, c.FrameBytes)
 	s.bandwidth = c.SourceBandwidth
+	s.clientMaxBytes = c.ClientMaxBytes
 	s.closeIdle = c.CloseIdle
 	s.frameBytes = c.FrameBytes
 	s.HeaderBytes = c.HeaderBytes
@@ -206,7 +207,7 @@ func (s *Source) LogStats() {
 	log.Printf("source %s stats: %d in (%d invalid) %d out", s.path, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
 }
 
-func (s *Source) GetHeader(buf []byte) (err error) {
+func (s *Source) GetHeader(buf []byte) error {
 	if s.HeaderBytes == 0 {
 		return nil
 	}
@@ -216,72 +217,24 @@ func (s *Source) GetHeader(buf []byte) (err error) {
 		s.Cond.Wait()
 	}
 	if uint64(len(s.header)) < s.HeaderBytes {
-		err = io.EOF
-		return
+		return io.EOF
 	}
 	if len(buf) < len(s.header) {
-		err = errors.New("Caller's header buffer is too small.")
-		return
+		return BufferTooSmall
 	}
 	atomic.AddUint64(&s.statBytesOut, s.HeaderBytes)
 	copy(buf, s.header)
-	return
+	return nil
 }
 
-// Copy the next data frame into the given buffer and update the
-// nextFrame pointer.
-//
-// Return the number of frames skipped due to buffer underrun. If the
-// data source is exhausted, return with err == io.EOF (with frame
-// untouched and other return values undefined).
-func (s *Source) Next(nextFrame *uint64, frame *DataFrame) (nSkipped uint64, err error) {
-	// We avoid doing more locking than absolutely necessary here,
-	// which causes some edge cases: it's possible for s.nextFrame
-	// to advance and even lap *nextFrame while we're deciding
-	// which frame to grab. However, since s.nextFrame never moves
-	// backward, the two worst cases are: [1] we grab a frame
-	// after computing nSkipped and then being lapped again, which
-	// means nSkipped underestimates the distance between the
-	// requested and actual frame (but this will be made up next
-	// time around), and [2] we grab a frame after s.nextFrame has
-	// advanced _to_ that frame, which means readNextFrame() will
-	// block while we copy the frame (but that's no worse than
-	// blocking _every_ readNextFrame, which would happen if we
-	// held a lock on s.nextFrame here).
-	if s.nextFrame > uint64(0) && *nextFrame == uint64(0) {
-		// New clients start out reading fresh frames.
-		*nextFrame = s.nextFrame - uint64(1)
-	} else if s.nextFrame >= *nextFrame+uint64(cap(s.frames)) {
-		// s.nextFrame has lapped *nextFrame. Catch up.
-		delta := s.nextFrame - *nextFrame - uint64(1)
-		nSkipped += delta
-		*nextFrame += delta
-	} else if *nextFrame >= s.nextFrame {
-		// Client has caught up to source. Includes "both are at zero" case.
-		s.Cond.L.Lock()
-		for *nextFrame >= s.nextFrame && !s.gone {
-			s.Cond.Wait()
-		}
-		s.Cond.L.Unlock()
-		if *nextFrame >= s.nextFrame {
-			// source is gone _and_ there are no more full frames in the buffer.
-			err = io.EOF
-			return
-		}
-	}
-	bufPos := *nextFrame % uint64(cap(s.frames))
-	s.frameLocks[bufPos].RLock()
-	defer s.frameLocks[bufPos].RUnlock()
-	if cap(*frame) < len(s.frames[bufPos]) {
-		err = errors.New("Caller's frame buffer is too small.")
-	}
-	*frame = (*frame)[:len(s.frames[bufPos])]
-	copy(*frame, s.frames[bufPos])
-	atomic.AddUint64(&s.statBytesOut, uint64(len(s.frames[bufPos])))
-	*nextFrame++
-	return
+// NewReader returns a SourceReader that reads frames from this source.
+func (s *Source) NewReader() *SourceReader {
+	s.sinkCount++
+	return &SourceReader{source: s}
 }
 
+// Done is called by each SourceReader when it stops reading, so the
+// Source can know whether it is idle.
 func (s *Source) Done() {
 	s.sinkCount--
 	if s.closeIdle {
@@ -323,27 +276,28 @@ func NewSourceMap() (sm *SourceMap) {
 	return
 }
 
+func (sm *SourceMap) Count() int {
+	return len(sm.sources)
+}
+
 func (sm *SourceMap) Close() {
 	for _, src := range sm.sources {
 		src.Close()
 	}
 }
 
-// GetSource returns a Source for the given path (URI) and config
-// (argv). At any given time, there is at most one Source for a given
-// path.
-//
-// The caller must ensure Done() is eventually called, exactly once,
-// on the returned *Source.
-func (sm *SourceMap) GetSource(path string, c *Config) (src *Source) {
+// NewReader returns a SourceReader for the given path (URI) and
+// config (argv). At any given time, there is at most one Source for a
+// given path.
+func (sm *SourceMap) NewReader(path string, c *Config) *SourceReader {
 	sm.mutex.Lock()
 	defer sm.mutex.Unlock()
+	var src *Source
 	var ok bool
 	if src, ok = sm.sources[path]; !ok {
 		src = NewSource(path, c, sm)
 		sm.sources[path] = src
 		go src.run()
 	}
-	src.sinkCount++
-	return src
+	return src.NewReader()
 }
