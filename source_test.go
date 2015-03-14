@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"hash/crc64"
 	"io"
+	"io/ioutil"
 	"math/rand"
 	"os"
 	"os/exec"
@@ -141,6 +142,41 @@ func DataFaker(t *testing.T) (string, chan<- interface{}, *[]byte) {
 		w.Close()
 	}()
 	return fmt.Sprintf("/dev/fd/%d", r.Fd()), wantMore, &sentData
+}
+
+func TestSourceFilterContext(t *testing.T) {
+	context := 1000
+	Filters["MOCK"] = func(frame []byte, contextIn interface{}) (int, interface{}, error) {
+		switch ctx := contextIn.(type) {
+		case int:
+			if context != ctx {
+				t.Error("expected", context, "got", ctx)
+			}
+		case nil:
+			context = 1000
+		}
+		context++
+		return len(frame), context, nil
+	}
+	defer func() { delete(Filters, "MOCK") }()
+	fakeFile, sendFake, _ := DataFaker(t)
+	sm := NewSourceMap()
+	defer sm.Close()
+	rdr := sm.NewReader(fakeFile, &Config{
+		SourceBuffer: 5,
+		FrameBytes:   4,
+		CloseIdle:    true,
+		Reopen:       false,
+		FrameFilter:  "MOCK",
+	})
+	go func() {
+		sendFake <- make([]byte, 160)
+		close(sendFake)
+	}()
+	ioutil.ReadAll(rdr)
+	if context != 1040 {
+		t.Error("context was", context)
+	}
 }
 
 func TestSourceFilter(t *testing.T) {
