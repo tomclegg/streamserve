@@ -118,7 +118,7 @@ func (s *Source) readNextFrame() (okFrameSize int, err error) {
 		}
 		frameStart := 0
 		for err != ShortFrame && frameStart < frameEnd {
-			okFrameSize, err = s.filter(s.frames[bufPos][frameStart:frameEnd], &s.filterContext)
+			okFrameSize, s.filterContext, err = s.filter(s.frames[bufPos][frameStart:frameEnd], s.filterContext)
 			switch err {
 			case nil:
 				s.todo = s.todo[:frameEnd-okFrameSize-frameStart]

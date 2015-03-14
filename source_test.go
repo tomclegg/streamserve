@@ -152,18 +152,18 @@ func TestSourceFilter(t *testing.T) {
 	}
 	fMock := make(chan *expect, 100)
 	var pending *expect
-	Filters["MOCK"] = func(frame []byte, context *interface{}) (frameSize int, err error) {
+	Filters["MOCK"] = func(frame []byte, _ interface{}) (frameSize int, _ interface{}, err error) {
 		if pending == nil {
 			pending = <-fMock
 		}
 		if len(frame) < len(pending.frame) {
-			return len(pending.frame), ShortFrame
+			return len(pending.frame), nil, ShortFrame
 		}
 		if 0 != bytes.Compare(pending.frame, frame[0:len(pending.frame)]) {
 			t.Fatalf("Expected filter(%v), got %v", pending.frame, frame)
 		}
 		defer func() { pending = nil }()
-		return pending.frameSize, pending.err
+		return pending.frameSize, nil, pending.err
 	}
 	defer func() { delete(Filters, "MOCK") }()
 	fakeFile, sendFake, _ := DataFaker(t)
@@ -256,7 +256,7 @@ func TestSentEqualsReceived(t *testing.T) {
 func TestBandwidthVariableFrameSize(t *testing.T) {
 	frameSizes := []int{47, 128, 1024, 2048, 8192} // arbitrary, with some small and some big
 	var fsIndex int
-	Filters["MOCK"] = func(frame []byte, context *interface{}) (want int, err error) {
+	Filters["MOCK"] = func(frame []byte, _ interface{}) (want int, _ interface{}, err error) {
 		want = frameSizes[fsIndex]
 		if len(frame) < want {
 			err = ShortFrame

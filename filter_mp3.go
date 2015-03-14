@@ -6,7 +6,8 @@ func init() {
 	Filters["mp3"] = Mp3Filter
 }
 
-func Mp3Filter(frame []byte, context *interface{}) (frameSize int, err error) {
+func Mp3Filter(frame []byte, contextIn interface{}) (frameSize int, context interface{}, err error) {
+	context = contextIn
 	if len(frame) < 4 {
 		err = ShortFrame
 		return

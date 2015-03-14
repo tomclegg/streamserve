@@ -59,14 +59,13 @@ func TestMp3FilterLame40k16000(t *testing.T) {
 
 func shouldFilter(t *testing.T, fSize int, header ...byte) {
 	okFrame := append(header, make([]byte, fSize-len(header))...)
-	var dummy interface{}
-	if fs, err := Mp3Filter(okFrame, &dummy); err != nil || fs != fSize {
+	if fs, _, err := Mp3Filter(okFrame, nil); err != nil || fs != fSize {
 		t.Errorf("Good frame (%d, %v) returned %d, %s", fSize, header, fs, err)
 	}
-	if fs, err := Mp3Filter(append(okFrame, byte(0)), &dummy); err != nil || fs != fSize {
+	if fs, _, err := Mp3Filter(append(okFrame, byte(0)), nil); err != nil || fs != fSize {
 		t.Errorf("Good frame (%d+1, %v) returned %d, %s", fSize, header, fs, err)
 	}
-	if fs, err := Mp3Filter(okFrame[:fSize-1], &dummy); err != ShortFrame {
+	if fs, _, err := Mp3Filter(okFrame[:fSize-1], nil); err != ShortFrame {
 		t.Errorf("Short frame (%d, %v) returned %d, %s", fSize-1, header, fs, err)
 	}
 }
