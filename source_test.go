@@ -234,6 +234,7 @@ func TestSourceFilter(t *testing.T) {
 	expectNext([]byte{33, 44, 11, 22}, nil)
 	sm.Close()
 	// TODO: source should give filter a chance to accept the data at EOF, even though it doesn't fill max frame size.
+	// close(sendFake)
 	// fMock <- &expect{[]byte{33,44}, 1, nil}
 	// fMock <- &expect{[]byte{44}, 1, nil}
 	// expectNext([]byte{33}, nil)
