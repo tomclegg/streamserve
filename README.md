@@ -2,6 +2,8 @@
 
 Efficiently distribute media streams to http clients.
 
+See [usage docs at godoc.org](https://godoc.org/github.com/tomclegg/streamserve).
+
 # release status
 
 alpha.
