@@ -6,6 +6,9 @@ func init() {
 	Filters["mp3"] = Mp3Filter
 }
 
+// BUG(tomclegg): Mp3Filter does not inspect logical frames, which
+// span several physical frames. To eliminate decoding errors, it
+// should return logical MP3 frames instead of physical frames.
 func Mp3Filter(frame []byte, contextIn interface{}) (frameSize int, context interface{}, err error) {
 	context = contextIn
 	if len(frame) < 4 {
