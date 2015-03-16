@@ -7,6 +7,19 @@ Efficiently distribute media streams to http clients.
 * [TODO](TODO.md)
 * [AGPLv3](LICENSE)
 
+Install binary package (linux amd64):
+* Download a deb, rpm, or tar.bz2 from the [Releases](https://github.com/tomclegg/streamserve/releases) page
+* Install it with dpkg, rpm, or tar
+
+Install from source (assuming you have the Go tools installed and
+`$GOPATH/bin` is in your `PATH`):
+
+```
+go get github.com/tomclegg/streamserve
+```
+
+Run:
+
 ```
 streamserve -address :44100 \
             -source-buffer 40 \
