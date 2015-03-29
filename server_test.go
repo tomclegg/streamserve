@@ -54,6 +54,28 @@ func TestServerStopsIfCantReopen(t *testing.T) {
 	}
 }
 
+func TestBigFrame(t *testing.T) {
+	wantlen := 1<<22	// >4x io.Copy's buffer
+	srv := &Server{}
+	srv.Run(&Config{
+		Addr:           ":0",
+		CloseIdle:      true,
+		FrameBytes:     uint64(wantlen>>2),
+		ClientMaxBytes: uint64(wantlen),
+		Path:           "/dev/urandom",
+		Reopen:         false,
+		SourceBuffer:   5,
+	})
+	defer srv.Close()
+	resp, err := http.Get(fmt.Sprintf("http://%s/", srv.Addr))
+	if err != nil {
+		t.Fatal("Got err ", err)
+	}
+	if body, err := ioutil.ReadAll(resp.Body); len(body) != wantlen || err != nil {
+		t.Error("Got len(body)", len(body), "err", err, "-- wanted", wantlen)
+	}
+}
+
 func TestClientRateSpread(t *testing.T) {
 	nClients := 500
 	bytesRcvd := uint64(0)

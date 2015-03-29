@@ -1,6 +1,7 @@
 package main
 
 import (
+	"bufio"
 	"io"
 	"log"
 	"net"
@@ -65,7 +66,8 @@ func (srv *Server) Run(c *Config) (err error) {
 		startTime := time.Now()
 		sreader := srv.sourceMap.NewReader(c.Path, c)
 		fwriter := &FlushyResponseWriter{writer}
-		wroteBytes, err := io.Copy(fwriter, sreader)
+		wroteBytes, err := io.Copy(fwriter,
+			bufio.NewReaderSize(sreader, int(c.FrameBytes)))
 		if e, ok := err.(*net.OpError); ok {
 			if e, ok := e.Err.(syscall.Errno); ok {
 				if e == syscall.ECONNRESET {
