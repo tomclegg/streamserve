@@ -58,6 +58,11 @@ received from the source.
 
 Listening address
 
+By default, streamserve listens for connections at port 80 on all
+network interfaces. However, only root can listen to port 80, and you
+probably shouldn't be running streamserve as root until it gets a
+setuid feature.
+
 Specify an IP address and port number:
 
   -address 10.1.2.3:10123
