@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"io"
 	"log"
 	"net"
@@ -58,6 +59,13 @@ func (srv *Server) Run(c *Config) (err error) {
 	srv.listener, err = net.ListenTCP("tcp", addr)
 	if err != nil {
 		return
+	}
+	if c.UID != 0 {
+		err = syscall.Setuid(c.UID)
+		if err != nil {
+			err = errors.New("Setuid: "+err.Error())
+			return
+		}
 	}
 	srv.Addr = srv.listener.Addr().String()
 	srv.sourceMap = NewSourceMap()

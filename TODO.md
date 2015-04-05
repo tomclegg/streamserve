@@ -1,6 +1,5 @@
 # TODO
 
-* Setuid to given user after opening port. (Won't work in Linux.)
 * If -exec is given, source is stdout of command given after flags.
 * Check mp3 logical frames.
 * Refactor source frame reader to use bufio.

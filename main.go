@@ -5,6 +5,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"os"
 	"runtime"
 	"time"
 )
@@ -24,6 +25,7 @@ type Config struct {
 	CPUMax          int
 	Reopen          bool
 	StatLogInterval time.Duration
+	UID             int
 }
 
 var config Config
@@ -55,6 +57,8 @@ func init() {
 		"Reopen and resume reading if an error is encountered while reading an input FIFO. Default is true. Use -reopen=false to disable.")
 	flag.DurationVar(&c.StatLogInterval, "stat-log-interval", 0,
 		"Seconds between periodic statistics logs for each stream source, or 0 to disable.")
+	flag.IntVar(&c.UID, "uid", os.Getuid(),
+		"Setuid() to the given user after binding the listening port. (Ignored if 0. In Linux, use setcap instead.)")
 	flag.BoolVar(&Debugging, "debug", false,
 		"Print debug info.")
 }
