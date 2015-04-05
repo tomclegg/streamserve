@@ -126,10 +126,10 @@ func TestClientRateSpread(t *testing.T) {
 }
 
 func BenchmarkServer128ClientsGetZero(b *testing.B) {
-	devZeroToClients(*b, 128, b.N)
+	devZeroToClients(b, 128, b.N)
 }
 
-func devZeroToClients(b testing.B, nClients int, nBytesPerClient int) {
+func devZeroToClients(b *testing.B, nClients int, nBytesPerClient int) {
 	srv := &Server{}
 	err := srv.Run(&Config{Addr: ":0", FrameBytes: 2 << 11, Path: "/dev/zero", SourceBuffer: 2 << 11, StatLogInterval: time.Duration(time.Second)})
 	if err != nil {

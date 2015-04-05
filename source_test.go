@@ -134,7 +134,7 @@ func DataFaker(t *testing.T) (string, chan<- interface{}, *[]byte) {
 			}
 			sentData = append(sentData, moreData...)
 			if did, err := w.Write(moreData); did < len(moreData) || err != nil {
-				t.Error("Short write: %d < %d, %s", did, len(moreData), err)
+				t.Errorf("Short write: %d < %d, %s", did, len(moreData), err)
 			}
 			w.Sync()
 		}
