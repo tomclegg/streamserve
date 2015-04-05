@@ -1,6 +1,7 @@
 # TODO
 
-* If -exec is given, source is stdout of command given after flags
+* Setuid to given user after opening port. (Won't work in Linux.)
+* If -exec is given, source is stdout of command given after flags.
 * Check mp3 logical frames.
 * Refactor source frame reader to use bufio.
 * Multiple streams (pay attention to client URI). Caveat: can't exit-on-idle.
