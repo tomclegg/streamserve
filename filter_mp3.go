@@ -79,14 +79,14 @@ var v1l3Bitrate = []int{-1, 32, 40, 48, 56, 64, 80, 96, 112, 128, 160, 192, 224,
 var v2l1Bitrate = []int{-1, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, -1}
 var v2l2Bitrate = []int{-1, 8, 16, 24, 32, 40, 48, 56, 64, 80, 96, 112, 128, 144, 160, -1}
 var bitrateTable = [][][]int{
-	[][]int{invalid, v2l2Bitrate, v2l2Bitrate, v2l1Bitrate}, // version2_5
-	[][]int{invalid, invalid, invalid, invalid},
-	[][]int{invalid, v2l2Bitrate, v2l2Bitrate, v2l1Bitrate}, // version2
-	[][]int{invalid, v1l3Bitrate, v1l2Bitrate, v1l1Bitrate}, // version1
+	{invalid, v2l2Bitrate, v2l2Bitrate, v2l1Bitrate}, // version2_5
+	{invalid, invalid, invalid, invalid},
+	{invalid, v2l2Bitrate, v2l2Bitrate, v2l1Bitrate}, // version2
+	{invalid, v1l3Bitrate, v1l2Bitrate, v1l1Bitrate}, // version1
 }
 var samplerateTable = [][]int{
-	[]int{11025, 12000, 8000}, // version2_5
+	{11025, 12000, 8000}, // version2_5
 	invalid,
-	[]int{22050, 24000, 16000}, // version2
-	[]int{44100, 48000, 32000}, // version1
+	{22050, 24000, 16000}, // version2
+	{44100, 48000, 32000}, // version1
 }

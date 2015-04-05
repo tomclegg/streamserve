@@ -161,7 +161,7 @@ func (s *Source) run() {
 	if s.bandwidth > 0 {
 		ticker = time.NewTicker(time.Duration(uint64(time.Second) * s.frameBytes / s.bandwidth))
 	}
-	var toThrottle int	// #bytes read from source but not yet throttled by ticker
+	var toThrottle int // #bytes read from source but not yet throttled by ticker
 	var statTicker <-chan time.Time
 	if s.statLogInterval > 0 {
 		statTicker = (time.NewTicker(s.statLogInterval)).C

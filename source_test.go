@@ -304,20 +304,20 @@ func TestBandwidthVariableFrameSize(t *testing.T) {
 	}
 	defer func() { delete(Filters, "MOCK") }()
 	doBandwidthTests(t, &Config{
-		SourceBuffer:    16,
-		FrameBytes:      8192,
-		CloseIdle:       true,
-		Reopen:          false,
-		FrameFilter:     "MOCK",
+		SourceBuffer: 16,
+		FrameBytes:   8192,
+		CloseIdle:    true,
+		Reopen:       false,
+		FrameFilter:  "MOCK",
 	})
 }
 
 func TestBandwidth(t *testing.T) {
 	doBandwidthTests(t, &Config{
-		SourceBuffer:    16,
-		FrameBytes:      8192,
-		CloseIdle:       true,
-		Reopen:          false,
+		SourceBuffer: 16,
+		FrameBytes:   8192,
+		CloseIdle:    true,
+		Reopen:       false,
 	})
 }
 
@@ -350,7 +350,7 @@ func doBandwidthTests(t *testing.T, config *Config) {
 		}
 		bpf := got / gotFrames
 		t.Log("Requested", bw, "B/s, got", got, "B in 1s (avg", bpf, "bpf)")
-		if got > bw * 12 / 10 || got < bw * 8 / 10 {
+		if got > bw*12/10 || got < bw*8/10 {
 			t.Error("Bandwidth out of acceptable range")
 		}
 		sm.Close()

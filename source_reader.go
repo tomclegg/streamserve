@@ -9,15 +9,14 @@ import (
 // SourceReader reads data from a Source. Every Read() call either
 // reads exactly one complete frame, or returns an error.
 type SourceReader struct {
-	source        *Source
-	didHeader     bool
-	nextFrame     uint64
-	FramesRead    uint64
-	FramesSkipped uint64 // A frame is "skipped" if an earlier
-			     // frame and a later frame have been
-			     // returned by a Read() call, but the
-			     // frame itself was never returned by
-			     // Read().
+	source     *Source
+	didHeader  bool
+	nextFrame  uint64
+	FramesRead uint64
+	// A frame is "skipped" if an earlier frame and a later frame
+	// have been returned by a Read() call, but the frame itself
+	// was never returned by Read().
+	FramesSkipped uint64
 	BytesRead     uint64
 }
 

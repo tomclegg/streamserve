@@ -55,12 +55,12 @@ func TestServerStopsIfCantReopen(t *testing.T) {
 }
 
 func TestBigFrame(t *testing.T) {
-	wantlen := 1<<22	// >4x io.Copy's buffer
+	wantlen := 1 << 22 // >4x io.Copy's buffer
 	srv := &Server{}
 	srv.Run(&Config{
 		Addr:           ":0",
 		CloseIdle:      true,
-		FrameBytes:     uint64(wantlen>>2),
+		FrameBytes:     uint64(wantlen >> 2),
 		ClientMaxBytes: uint64(wantlen),
 		Path:           "/dev/urandom",
 		Reopen:         false,
