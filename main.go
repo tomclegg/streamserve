@@ -23,6 +23,7 @@ type Config struct {
 	SourceBandwidth uint64
 	ClientMaxBytes  uint64
 	CloseIdle       bool
+	ContentType     string
 	CPUMax          int
 	Reopen          bool
 	StatLogInterval time.Duration
@@ -52,6 +53,8 @@ func init() {
 		"Maximum bytes to send to each client. 0=unlimited.")
 	flag.BoolVar(&c.CloseIdle, "close-idle", false,
 		"Close an input FIFO if all of its clients disconnect. This stops whatever process is writing to the FIFO, which can be useful if that process consumes resources, but depends on that process to restart/resume reliably. The FIFO will reopen next time a client requests it.")
+	flag.StringVar(&c.ContentType, "content-type", "application/octet-stream",
+		"Content-Type header for HTTP responses.")
 	flag.IntVar(&c.CPUMax, "cpu-max", runtime.NumCPU(),
 		"Maximum OS procs/threads to use. This effectively limits CPU consumption to the given number of cores. The default is the number of CPUs reported by the system. If 0 is given, the default is used.")
 	flag.BoolVar(&c.Reopen, "reopen", true,
