@@ -7,6 +7,7 @@ import (
 	"log"
 	"net"
 	"net/http"
+	"os"
 	"runtime"
 	"sync"
 	"syscall"
@@ -60,7 +61,7 @@ func (srv *Server) Run(c *Config) (err error) {
 	if err != nil {
 		return
 	}
-	if c.UID != 0 {
+	if c.UID != os.Getuid() {
 		err = syscall.Setuid(c.UID)
 		if err != nil {
 			err = errors.New("Setuid: " + err.Error())
