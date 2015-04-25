@@ -12,8 +12,8 @@ import (
 
 type Source struct {
 	sinkCount        int
-	todo             DataFrame
-	frames           []DataFrame
+	todo             []byte
+	frames           [][]byte
 	frameLocks       []sync.RWMutex
 	frameBytes       uint64
 	gone             bool
@@ -43,11 +43,11 @@ func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 	s.sourceMap = sourceMap
 	s.Cond = sync.NewCond(s.RLocker())
 	s.frameLocks = make([]sync.RWMutex, c.SourceBuffer)
-	s.frames = make([]DataFrame, c.SourceBuffer)
+	s.frames = make([][]byte, c.SourceBuffer)
 	for i := range s.frames {
-		s.frames[i] = make(DataFrame, c.FrameBytes)
+		s.frames[i] = make([]byte, c.FrameBytes)
 	}
-	s.todo = make(DataFrame, 0, c.FrameBytes)
+	s.todo = make([]byte, 0, c.FrameBytes)
 	s.bandwidth = c.SourceBandwidth
 	s.clientMaxBytes = c.ClientMaxBytes
 	s.closeIdle = c.CloseIdle
@@ -117,7 +117,7 @@ func (s *Source) readNextFrame() (okFrameSize int, err error) {
 			}
 		}
 		frameStart := 0
-		for err != ShortFrame && frameStart < frameEnd {
+		for err != ErrShortFrame && frameStart < frameEnd {
 			okFrameSize, s.filterContext, err = s.filter(s.frames[bufPos][frameStart:frameEnd], s.filterContext)
 			switch err {
 			case nil:
@@ -128,7 +128,7 @@ func (s *Source) readNextFrame() (okFrameSize int, err error) {
 				}
 				s.frames[bufPos] = s.frames[bufPos][:okFrameSize]
 				return
-			case InvalidFrame:
+			case ErrInvalidFrame:
 				// Try filter again on next byte
 				frameStart++
 				s.statBytesInvalid++
@@ -220,7 +220,7 @@ func (s *Source) GetHeader(buf []byte) (int, error) {
 		return 0, io.EOF
 	}
 	if len(buf) < len(s.header) {
-		return 0, BufferTooSmall
+		return 0, ErrBufferTooSmall
 	}
 	atomic.AddUint64(&s.statBytesOut, s.HeaderBytes)
 	copy(buf, s.header)
@@ -238,7 +238,7 @@ func (s *Source) NewReader() *SourceReader {
 func (s *Source) Done() {
 	s.sinkCount--
 	if s.closeIdle {
-		s.CloseIfIdle()
+		s.closeIfIdle()
 	}
 }
 
@@ -248,12 +248,13 @@ func (s *Source) disconnectAll() {
 	s.Broadcast()
 }
 
+// Close disconnects all clients and closes the source.
 func (s *Source) Close() {
 	s.closeIdle = true
 	s.disconnectAll()
 }
 
-func (s *Source) CloseIfIdle() {
+func (s *Source) closeIfIdle() {
 	didClose := false
 	s.sourceMap.mutex.Lock()
 	if s.sinkCount == 0 {
@@ -276,10 +277,12 @@ func NewSourceMap() (sm *SourceMap) {
 	return
 }
 
+// Count returns the number of open sources.
 func (sm *SourceMap) Count() int {
 	return len(sm.sources)
 }
 
+// Close closes all sources, disconnecting all of their clients.
 func (sm *SourceMap) Close() {
 	for _, src := range sm.sources {
 		src.Close()

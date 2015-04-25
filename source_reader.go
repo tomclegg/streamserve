@@ -20,7 +20,9 @@ type SourceReader struct {
 	BytesRead     uint64
 }
 
-var BufferTooSmall = errors.New("caller's buffer is too small")
+// ErrBufferTooSmall is returned if Read is called with a buffer
+// smaller than the source's next frame.
+var ErrBufferTooSmall = errors.New("caller's buffer is too small")
 
 func (sr *SourceReader) Read(buf []byte) (int, error) {
 	// We avoid doing more locking than absolutely necessary here,
@@ -71,7 +73,7 @@ func (sr *SourceReader) Read(buf []byte) (int, error) {
 	defer s.frameLocks[bufPos].RUnlock()
 	frameSize := len(s.frames[bufPos])
 	if len(buf) < frameSize {
-		return 0, BufferTooSmall
+		return 0, ErrBufferTooSmall
 	}
 	copy(buf, s.frames[bufPos])
 	atomic.AddUint64(&s.statBytesOut, uint64(frameSize))
@@ -81,6 +83,8 @@ func (sr *SourceReader) Read(buf []byte) (int, error) {
 	return len(s.frames[bufPos]), nil
 }
 
+// Close disconnects the reader from the source. Unclosed
+// SourceReaders can cause Sources to stay open needlessly.
 func (sr *SourceReader) Close() {
 	sr.source.Done()
 }

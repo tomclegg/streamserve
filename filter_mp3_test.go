@@ -65,7 +65,7 @@ func shouldFilter(t *testing.T, fSize int, header ...byte) {
 	if fs, _, err := Mp3Filter(append(okFrame, byte(0)), nil); err != nil || fs != fSize {
 		t.Errorf("Good frame (%d+1, %v) returned %d, %s", fSize, header, fs, err)
 	}
-	if fs, _, err := Mp3Filter(okFrame[:fSize-1], nil); err != ShortFrame {
+	if fs, _, err := Mp3Filter(okFrame[:fSize-1], nil); err != ErrShortFrame {
 		t.Errorf("Short frame (%d, %v) returned %d, %s", fSize-1, header, fs, err)
 	}
 }

@@ -10,7 +10,7 @@ func TestRawFilter(t *testing.T) {
 	if fs, _, err := RawFilter(buf[4:], nil); !(fs == 4 && err == nil) {
 		t.Error("fs =", fs, "err =", err)
 	}
-	if fs, _, err := RawFilter(buf[:4], nil); !(fs == 8 && err == ShortFrame) {
+	if fs, _, err := RawFilter(buf[:4], nil); !(fs == 8 && err == ErrShortFrame) {
 		t.Error("fs =", fs, "err =", err)
 	}
 }

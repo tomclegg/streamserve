@@ -38,7 +38,7 @@ func TestSigpipe(t *testing.T) {
 		Reopen:       true,
 	})
 	defer rdr.Close()
-	var frame = make(DataFrame, 16)
+	var frame = make([]byte, 16)
 	for f := 0; f < 4; f++ {
 		if _, err = rdr.Read(frame); err != nil {
 			t.Error(err)
@@ -80,7 +80,7 @@ func TestEmptySource(t *testing.T) {
 		CloseIdle:    false,
 		Reopen:       false,
 	})
-	var frame = make(DataFrame, 16)
+	var frame = make([]byte, 16)
 	done := make(chan error, 1)
 	go func() {
 		_, err := rdr.Read(frame)
@@ -193,7 +193,7 @@ func TestSourceFilter(t *testing.T) {
 			pending = <-fMock
 		}
 		if len(frame) < len(pending.frame) {
-			return len(pending.frame), nil, ShortFrame
+			return len(pending.frame), nil, ErrShortFrame
 		}
 		if 0 != bytes.Compare(pending.frame, frame[0:len(pending.frame)]) {
 			t.Fatalf("Expected filter(%v), got %v", pending.frame, frame)
@@ -211,7 +211,7 @@ func TestSourceFilter(t *testing.T) {
 		Reopen:       false,
 		FrameFilter:  "MOCK",
 	})
-	var frame = make(DataFrame, 4)
+	var frame = make([]byte, 4)
 	expectNext := func(expect []byte, expectErr error) {
 		n, err := rdr.Read(frame)
 		if err != expectErr {
@@ -226,10 +226,10 @@ func TestSourceFilter(t *testing.T) {
 	expectNext([]byte{11, 22, 33, 44}, nil)
 	fMock <- &expect{[]byte{11, 22, 33, 00}, 3, nil}
 	expectNext([]byte{11, 22, 33}, nil)
-	fMock <- &expect{[]byte{00, 11, 00, 33}, 0, InvalidFrame}
+	fMock <- &expect{[]byte{00, 11, 00, 33}, 0, ErrInvalidFrame}
 	fMock <- &expect{[]byte{11, 00, 33, 44}, 1, nil}
 	expectNext([]byte{11}, nil)
-	fMock <- &expect{[]byte{00, 33, 44, 11}, 0, InvalidFrame}
+	fMock <- &expect{[]byte{00, 33, 44, 11}, 0, ErrInvalidFrame}
 	fMock <- &expect{[]byte{33, 44, 11, 22}, 4, nil}
 	expectNext([]byte{33, 44, 11, 22}, nil)
 	sm.Close()
@@ -255,7 +255,7 @@ func TestSentEqualsReceived(t *testing.T) {
 	})
 	defer rdr.Close()
 	var rcvdData = []byte{}
-	var frame = make(DataFrame, 16)
+	var frame = make([]byte, 16)
 	ok := make(chan bool)
 	wantMore <- 19 // Send one full frame (to make sure we start receiving at frame 0) and a bit extra
 	for f := 100; f > 0; f-- {
@@ -296,7 +296,7 @@ func TestBandwidthVariableFrameSize(t *testing.T) {
 	Filters["MOCK"] = func(frame []byte, _ interface{}) (want int, _ interface{}, err error) {
 		want = frameSizes[fsIndex]
 		if len(frame) < want {
-			err = ShortFrame
+			err = ErrShortFrame
 		} else {
 			fsIndex = (fsIndex + 1) % len(frameSizes)
 		}
@@ -327,7 +327,7 @@ func doBandwidthTests(t *testing.T, config *Config) {
 		config.SourceBandwidth = bw
 		sm := NewSourceMap()
 		rdr := sm.NewReader("/dev/urandom", config)
-		var frame = make(DataFrame, 16384)
+		var frame = make([]byte, 16384)
 		var got, gotFrames uint64
 		done := time.After(time.Second)
 	reading:
@@ -390,7 +390,7 @@ func TestHeader(t *testing.T) {
 		} else if uint64(n) != headerSize {
 			t.Errorf("Header size mismatch: %d != %d", n, headerSize)
 		}
-		var frame = make(DataFrame, 65536)
+		var frame = make([]byte, 65536)
 		for f := 0; f < 6; f++ {
 			var err error
 			if _, err = rdr.Read(frame); err != nil {
@@ -423,7 +423,7 @@ func TestContentEqual(t *testing.T) {
 			defer rdr.Close()
 			var hash uint64
 			defer func() { done <- hash }()
-			var frame = make(DataFrame, 65536)
+			var frame = make([]byte, 65536)
 			for f := 0; f < 130; f++ {
 				var err error
 				if _, err = rdr.Read(frame); err != nil && err != io.EOF {
@@ -514,7 +514,7 @@ func benchSource(b *testing.B, nConsumers int, conf Config) {
 }
 
 func consume(b *testing.B, rdr *SourceReader, label interface{}) {
-	var frame = make(DataFrame, rdr.source.frameBytes)
+	var frame = make([]byte, rdr.source.frameBytes)
 	for i := uint64(0); i < 10*uint64(b.N); i++ {
 		if _, err := rdr.Read(frame); err != nil {
 			if err != io.EOF {

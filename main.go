@@ -10,6 +10,7 @@ import (
 	"time"
 )
 
+// Debugging toggles verbose debug messages on stderr.
 var Debugging = false
 
 type Config struct {
@@ -63,6 +64,7 @@ func init() {
 		"Print debug info.")
 }
 
+// Check returns a non-nil error if the Config is unusable.
 func (c Config) Check() error {
 	if c.SourceBuffer <= 2 {
 		return errors.New("-source-buffer must be greater than 2")

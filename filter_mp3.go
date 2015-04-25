@@ -6,17 +6,20 @@ func init() {
 	Filters["mp3"] = Mp3Filter
 }
 
+// Mp3Filter accepts valid MPEG audio frames (MPEG-1, -2, -2.5 layer
+// I, II, III).
+//
 // BUG(tomclegg): Mp3Filter does not inspect logical frames, which
 // span several physical frames. To eliminate decoding errors, it
 // should return logical MP3 frames instead of physical frames.
 func Mp3Filter(frame []byte, contextIn interface{}) (frameSize int, context interface{}, err error) {
 	context = contextIn
 	if len(frame) < 4 {
-		err = ShortFrame
+		err = ErrShortFrame
 		return
 	}
 	if frame[0] != '\377' || (frame[1]&'\340') != '\340' {
-		err = InvalidFrame
+		err = ErrInvalidFrame
 		return
 	}
 	version := int(frame[1]>>3) & 3
@@ -26,7 +29,7 @@ func Mp3Filter(frame []byte, contextIn interface{}) (frameSize int, context inte
 		rate := int(frame[2]>>4) & 15
 		bitrates := bitrateTable[version][layer]
 		if len(bitrates) <= rate || bitrates[rate] <= 0 {
-			err = InvalidFrame
+			err = ErrInvalidFrame
 			return
 		}
 		bitrate = bitrates[rate] * 1000
@@ -36,7 +39,7 @@ func Mp3Filter(frame []byte, contextIn interface{}) (frameSize int, context inte
 		rate := int(frame[2]>>2) & 3
 		samplerates := samplerateTable[version]
 		if len(samplerates) <= rate {
-			err = InvalidFrame
+			err = ErrInvalidFrame
 			return
 		}
 		samplerate = samplerates[rate]
@@ -53,7 +56,7 @@ func Mp3Filter(frame []byte, contextIn interface{}) (frameSize int, context inte
 		frameSize = 144*bitrate/samplerate + padding
 	}
 	if frameSize > len(frame) {
-		err = ShortFrame
+		err = ErrShortFrame
 	} else if Debugging {
 		log.Printf("frameSize %d len %d MPEG-%s layer %s bitrate %d samplerate %d padding %d", frameSize, len(frame), versionName[version], layerName[layer], bitrate, samplerate, padding)
 	}
