@@ -61,7 +61,7 @@ func (srv *Server) Run(c *Config) (err error) {
 	if err != nil {
 		return
 	}
-	if c.UID != os.Getuid() {
+	if c.UID != os.Getuid() && c.UID != 0 {
 		err = syscall.Setuid(c.UID)
 		if err != nil {
 			err = errors.New("Setuid: " + err.Error())
