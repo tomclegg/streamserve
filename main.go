@@ -25,9 +25,11 @@ type Config struct {
 	CloseIdle       bool
 	ContentType     string
 	CPUMax          int
+	ExecFlag        bool
 	Reopen          bool
 	StatLogInterval time.Duration
 	UID             int
+	Args            []string
 }
 
 var config Config
@@ -39,6 +41,8 @@ func init() {
 		"Address to listen on: \"host:port\" where host and port can be names or numbers.")
 	flag.StringVar(&c.Path, "path", "/dev/stdin",
 		"Path to a source fifo, or a directory containing source fifos mapped onto the URI namespace.")
+	flag.BoolVar(&c.ExecFlag, "exec", false,
+		"Execute a command (given after all flags) and read from its stdout.")
 	flag.Uint64Var(&c.FrameBytes, "frame-bytes", 64,
 		"Size of a data frame. Only complete frames are sent to clients.")
 	flag.StringVar(&c.FrameFilter, "frame-filter", "",
@@ -84,6 +88,12 @@ func (c Config) Check() error {
 	if c.CPUMax == 0 {
 		c.CPUMax = runtime.NumCPU()
 	}
+	if c.ExecFlag && c.Path != flag.Lookup("path").DefValue && c.Path != "" {
+		return errors.New("cannot combine -exec and -path")
+	}
+	if c.ExecFlag == (len(c.Args) == 0) {
+		return errors.New("cannot use -exec without providing a command (or vice versa)")
+	}
 	if _, ok := Filters[c.FrameFilter]; !ok {
 		haveFilters := []string{}
 		for f := range Filters {
@@ -96,6 +106,7 @@ func (c Config) Check() error {
 
 func main() {
 	flag.Parse()
+	config.Args = flag.Args()
 	if err := config.Check(); err != nil {
 		log.Fatalf("Invalid configuration: %s", err)
 	}

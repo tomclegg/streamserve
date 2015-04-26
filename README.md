@@ -24,9 +24,18 @@ Run:
 streamserve -address :44100 \
             -source-buffer 40 \
             -frame-bytes 44100 \
-            -reopen=false \
+            -reopen \
             -close-idle=false \
-            -path <(arecord -f cd --file-type raw)
+            -exec arecord -f cd --file-type raw
+
+streamserve -address :6464 \
+            -content-type audio/mpeg \
+            -source-buffer 1000 \
+            -frame-bytes 300 \
+            -frame-filter mp3 \
+            -reopen \
+            -close-idle \
+            -exec sh -c 'curl -sS localhost:44100 | lame -r -h -b 64 -a -m l - -'
 ```
 
 Features / design goals

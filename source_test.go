@@ -35,7 +35,7 @@ func TestSigpipe(t *testing.T) {
 		SourceBuffer: 5,
 		FrameBytes:   16,
 		CloseIdle:    false,
-		Reopen:       true,
+		Reopen:       false,
 	})
 	defer rdr.Close()
 	var frame = make([]byte, 16)
@@ -288,6 +288,37 @@ func TestSentEqualsReceived(t *testing.T) {
 	if 0 != bytes.Compare(wantData, rcvdData) {
 		t.Errorf("want %d != rcvd %d", len(wantData), len(rcvdData))
 	}
+}
+
+func TestExec(t *testing.T) {
+	sm := NewSourceMap()
+	defer sm.Close()
+	rdr := sm.NewReader("", &Config{
+		SourceBuffer: 5,
+		FrameBytes:   3,
+		CloseIdle:    true,
+		Reopen:       true,
+		ExecFlag:     true,
+		Args:         []string{"echo", "-n", "foo"},
+	})
+	defer rdr.Close()
+	var frame = make([]byte, 3)
+	ok := make(chan bool)
+	go func() {
+		for i:=0; i<4; i++ {
+			if _, err := rdr.Read(frame); err != nil {
+				t.Fatalf("%v at %d", err, i)
+			}
+			if len(frame) != 3 {
+				t.Errorf("Wrong size frame, want 3 got %d", len(frame))
+			}
+			if string(frame) != "foo" {
+				t.Errorf("Got %v, expected %v", frame, []byte("foo"))
+			}
+		}
+		ok <- true
+	}()
+	failUnless(t, 100, ok)
 }
 
 func TestBandwidthVariableFrameSize(t *testing.T) {

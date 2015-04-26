@@ -2,15 +2,18 @@ package main
 
 import (
 	"bytes"
+	"fmt"
 	"io"
 	"log"
 	"os"
+	"os/exec"
 	"sync"
 	"sync/atomic"
 	"time"
 )
 
 type Source struct {
+	label            string
 	sinkCount        int
 	todo             []byte
 	frames           [][]byte
@@ -21,6 +24,8 @@ type Source struct {
 	HeaderBytes      uint64
 	input            io.ReadCloser
 	nextFrame        uint64 // How many frames have ever been here
+	execArgs         []string
+	cmd              *exec.Cmd
 	path             string
 	closeIdle        bool
 	reopen           bool
@@ -40,6 +45,7 @@ type Source struct {
 
 func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 	s = &Source{}
+	s.path = path
 	s.sourceMap = sourceMap
 	s.Cond = sync.NewCond(s.RLocker())
 	s.frameLocks = make([]sync.RWMutex, c.SourceBuffer)
@@ -53,33 +59,64 @@ func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 	s.closeIdle = c.CloseIdle
 	s.frameBytes = c.FrameBytes
 	s.HeaderBytes = c.HeaderBytes
-	s.path = path
 	s.reopen = c.Reopen
 	s.statLogInterval = c.StatLogInterval
 	s.filter = Filters[c.FrameFilter]
+	if c.ExecFlag {
+		s.label = fmt.Sprintf("%v", c.Args)
+		s.execArgs = c.Args
+	} else {
+		s.label = path
+	}
+	return
+}
+
+func (s *Source) openInputFile() (err error) {
+	s.input, err = os.Open(s.path)
+	return
+}
+
+func (s *Source) openInputCmd() (err error) {
+	s.cmd = exec.Command(s.execArgs[0], s.execArgs[1:]...)
+	s.input, err = s.cmd.StdoutPipe()
+	if err != nil {
+		s.cmd = nil
+		return
+	}
+	err = s.cmd.Start()
+	if err != nil {
+		s.cmd = nil
+		return
+	}
 	return
 }
 
 func (s *Source) openInput() (err error) {
 	// Notify anyone waiting for the header to arrive
 	defer s.Cond.Broadcast()
-	if s.input, err = os.Open(s.path); err != nil {
-		log.Printf("source %s open: %s", s.path, err)
+	if len(s.execArgs) > 0 {
+		err = s.openInputCmd()
+	} else {
+		err = s.openInputFile()
+	}
+	if err != nil {
+		log.Printf("source %s open: %s", s.label, err)
 		return
 	}
+	log.Println("source", s.label, "opened")
 	header := make([]byte, s.HeaderBytes)
 	for pos := uint64(0); pos < s.HeaderBytes; {
 		var got int
 		if got, err = s.input.Read(header[pos:]); got == 0 {
-			log.Printf("source %s read-header: %s", s.path, err)
-			s.input.Close()
+			log.Printf("source %s read-header: %s", s.label, err)
+			s.closeInput()
 			return
 		}
 		pos += uint64(got)
 	}
 	if len(s.header) > 0 && bytes.Compare(header, s.header) != 0 {
 		log.Printf("header mismatch: old %v, new %v", s.header, header)
-		s.input.Close()
+		s.closeInput()
 		return
 	}
 	s.Cond.L.Lock()
@@ -87,6 +124,20 @@ func (s *Source) openInput() (err error) {
 	s.Cond.L.Unlock()
 	s.statBytesIn += s.HeaderBytes
 	return
+}
+
+func (s *Source) closeInput() {
+	if s.input != nil {
+		s.input.Close()
+		s.input = nil
+	}
+	if s.cmd != nil {
+		if s.cmd.Process != nil {
+			s.cmd.Process.Kill()
+		}
+		s.cmd.Wait()
+		s.cmd = nil
+	}
 }
 
 func (s *Source) readNextFrame() (okFrameSize int, err error) {
@@ -103,7 +154,9 @@ func (s *Source) readNextFrame() (okFrameSize int, err error) {
 			s.todo = s.todo[:0]
 		} else {
 			got, err := s.input.Read(s.frames[bufPos][frameEnd:])
-			if got > 0 {
+			if s.gone {
+				return 0, io.EOF
+			} else if got > 0 {
 				frameEnd += got
 				s.statBytesIn += uint64(got)
 			} else if err != nil {
@@ -171,15 +224,17 @@ func (s *Source) run() {
 	for !s.gone {
 		var frameSize int
 		if frameSize, err = s.readNextFrame(); err != nil {
-			log.Printf("source %s read: %s", s.path, err)
-			s.input.Close()
-			s.input = nil
-			if !s.reopen {
+			log.Printf("source %s read: %s", s.label, err)
+			s.closeInput()
+			if s.gone || !s.reopen {
+				// Shouldn't reopen
 				break
 			} else if err = s.openInput(); err != nil {
-				continue
-			} else {
+				// Failed reopen
 				break
+			} else {
+				// Successful reopen
+				continue
 			}
 		}
 		s.nextFrame++
@@ -197,14 +252,12 @@ func (s *Source) run() {
 		default:
 		}
 	}
-	if s.input != nil {
-		s.input.Close()
-	}
+	s.closeInput()
 }
 
 // LogStats logs data source and client statistics (bytes in, skipped, out).
 func (s *Source) LogStats() {
-	log.Printf("source %s stats: %d in (%d invalid) %d out", s.path, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
+	log.Printf("source %s stats: %d in (%d invalid) %d out", s.label, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
 }
 
 func (s *Source) GetHeader(buf []byte) (int, error) {
@@ -244,6 +297,9 @@ func (s *Source) Done() {
 
 // Make sure everyone waiting in Next() gives up. Prevents deadlock.
 func (s *Source) disconnectAll() {
+	if !s.gone {
+		log.Println("source", s.label, "closing")
+	}
 	s.gone = true
 	s.Broadcast()
 }
@@ -252,6 +308,7 @@ func (s *Source) disconnectAll() {
 func (s *Source) Close() {
 	s.closeIdle = true
 	s.disconnectAll()
+	s.closeInput()
 }
 
 func (s *Source) closeIfIdle() {
@@ -263,7 +320,7 @@ func (s *Source) closeIfIdle() {
 	}
 	s.sourceMap.mutex.Unlock()
 	if didClose {
-		s.disconnectAll()
+		s.Close()
 	}
 }
 
