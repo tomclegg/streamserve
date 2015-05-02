@@ -72,6 +72,7 @@ func (srv *Server) Run(c *Config) (err error) {
 	srv.sourceMap = NewSourceMap()
 	mux := http.NewServeMux()
 	mux.HandleFunc("/", func(writer http.ResponseWriter, req *http.Request) {
+		log.Println("client", req.RemoteAddr, c.Path)
 		writer.Header().Set("Content-Type", config.ContentType)
 		startTime := time.Now()
 		sreader := srv.sourceMap.NewReader(c.Path, c)

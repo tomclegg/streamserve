@@ -14,7 +14,7 @@ import (
 
 type Source struct {
 	label            string
-	sinkCount        int
+	sinkCount        uint64
 	todo             []byte
 	frames           [][]byte
 	frameLocks       []sync.RWMutex
@@ -257,7 +257,7 @@ func (s *Source) run() {
 
 // LogStats logs data source and client statistics (bytes in, skipped, out).
 func (s *Source) LogStats() {
-	log.Printf("source %s stats: %d in (%d invalid) %d out", s.label, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
+	log.Printf("source %s: %d activeclients, %d inbytes, %d invalidbytes, %d outbytes", s.label, s.sinkCount, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
 }
 
 func (s *Source) GetHeader(buf []byte) (int, error) {
@@ -282,14 +282,16 @@ func (s *Source) GetHeader(buf []byte) (int, error) {
 
 // NewReader returns a SourceReader that reads frames from this source.
 func (s *Source) NewReader() *SourceReader {
-	s.sinkCount++
+	atomic.AddUint64(&s.sinkCount, 1)
+	s.LogStats()
 	return &SourceReader{source: s}
 }
 
 // Done is called by each SourceReader when it stops reading, so the
 // Source can know whether it is idle.
 func (s *Source) Done() {
-	s.sinkCount--
+	atomic.AddUint64(&s.sinkCount, ^uint64(0))
+	s.LogStats()
 	if s.closeIdle {
 		s.closeIfIdle()
 	}
