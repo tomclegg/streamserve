@@ -21,7 +21,7 @@ func TestSigpipe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	cmd := exec.Command("head", "-c64", "/dev/urandom")
+	cmd := exec.Command("sh", "-c", "sleep .1; head -c64 /dev/urandom; sleep .1")
 	cmd.Stdout = w
 	if err = cmd.Start(); err != nil {
 		t.Fatal(err)
@@ -53,7 +53,7 @@ func TestSigpipe(t *testing.T) {
 	}()
 	select {
 	case <-time.After(time.Second):
-		t.Error("Should have given up within 1s of SIGCHLD")
+		t.Error("Should have given up within 1s of SIGPIPE")
 	case <-done:
 		if err == nil {
 			t.Errorf("Should have error, got frame %v", frame[:got])
