@@ -305,7 +305,7 @@ func TestExec(t *testing.T) {
 	var frame = make([]byte, 3)
 	ok := make(chan bool)
 	go func() {
-		for i:=0; i<4; i++ {
+		for i := 0; i < 4; i++ {
 			if _, err := rdr.Read(frame); err != nil {
 				t.Fatalf("%v at %d", err, i)
 			}
@@ -319,6 +319,35 @@ func TestExec(t *testing.T) {
 		ok <- true
 	}()
 	failUnless(t, 100, ok)
+}
+
+func TestExecMaxQuietTime(t *testing.T) {
+	sm := NewSourceMap()
+	defer sm.Close()
+	rdr := sm.NewReader("", &Config{
+		SourceBuffer:     5,
+		FrameBytes:       1,
+		CloseIdle:        true,
+		Reopen:           true,
+		ExecFlag:         true,
+		MaxQuietInterval: 150 * time.Millisecond,
+		Args:             []string{"sh", "-c", "sleep .1; echo -n a; sleep .1; echo -n b; sleep .3; echo -n cdefg"},
+	})
+	defer rdr.Close()
+	var got = make([]byte, 9)
+	ok := make(chan bool)
+	go func() {
+		for i := 0; i < cap(got); i++ {
+			if _, err := rdr.Read(got[i:]); err != nil {
+				t.Fatalf("%v at %d", err, i)
+			}
+		}
+		ok <- true
+	}()
+	failUnless(t, 3000, ok)
+	if string(got) != "ababababa" {
+		t.Errorf("Got %v, expected ababababa", string(got))
+	}
 }
 
 func TestBandwidthVariableFrameSize(t *testing.T) {
@@ -378,6 +407,9 @@ func doBandwidthTests(t *testing.T, config *Config) {
 				gotFrames++
 				got += uint64(n)
 			}
+		}
+		if gotFrames == 0 {
+			t.Fatal("got no frames")
 		}
 		bpf := got / gotFrames
 		t.Log("Requested", bw, "B/s, got", got, "B in 1s (avg", bpf, "bpf)")

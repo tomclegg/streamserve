@@ -14,22 +14,23 @@ import (
 var Debugging = false
 
 type Config struct {
-	Addr            string
-	Path            string
-	FrameBytes      uint64
-	FrameFilter     string
-	HeaderBytes     uint64
-	SourceBuffer    uint64
-	SourceBandwidth uint64
-	ClientMaxBytes  uint64
-	CloseIdle       bool
-	ContentType     string
-	CPUMax          int
-	ExecFlag        bool
-	Reopen          bool
-	StatLogInterval time.Duration
-	UID             int
-	Args            []string
+	Addr             string
+	Path             string
+	FrameBytes       uint64
+	FrameFilter      string
+	HeaderBytes      uint64
+	SourceBuffer     uint64
+	SourceBandwidth  uint64
+	ClientMaxBytes   uint64
+	CloseIdle        bool
+	ContentType      string
+	CPUMax           int
+	ExecFlag         bool
+	Reopen           bool
+	StatLogInterval  time.Duration
+	MaxQuietInterval time.Duration
+	UID              int
+	Args             []string
 }
 
 var config Config
@@ -64,7 +65,9 @@ func init() {
 	flag.BoolVar(&c.Reopen, "reopen", true,
 		"Reopen and resume reading if an error is encountered while reading an input FIFO. Default is true. Use -reopen=false to disable.")
 	flag.DurationVar(&c.StatLogInterval, "stat-log-interval", 0,
-		"Seconds between periodic statistics logs for each stream source, or 0 to disable.")
+		"Time between periodic statistics logs for each stream source, or 0 to disable.")
+	flag.DurationVar(&c.MaxQuietInterval, "max-quiet-interval", 0,
+		"Maximum time to wait for the next source frame before killing/closing/reopening the source, or 0 for unlimited.")
 	flag.IntVar(&c.UID, "uid", os.Getuid(),
 		"Setuid() to the given user after binding the listening port. (Ignored if 0. In Linux, use setcap instead.)")
 	flag.BoolVar(&Debugging, "debug", false,

@@ -2,6 +2,7 @@ package main
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"log"
@@ -11,6 +12,8 @@ import (
 	"sync/atomic"
 	"time"
 )
+
+var ErrInputClosed = errors.New("Input is closed")
 
 type Source struct {
 	label            string
@@ -23,6 +26,7 @@ type Source struct {
 	header           []byte
 	HeaderBytes      uint64
 	input            io.ReadCloser
+	inputLock        sync.Mutex
 	nextFrame        uint64 // How many frames have ever been here
 	execArgs         []string
 	cmd              *exec.Cmd
@@ -40,6 +44,7 @@ type Source struct {
 	statBytesOut     uint64
 	statLast         time.Time
 	statLogInterval  time.Duration
+	maxQuietInterval time.Duration
 	sourceMap        *SourceMap
 }
 
@@ -61,6 +66,7 @@ func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 	s.HeaderBytes = c.HeaderBytes
 	s.reopen = c.Reopen
 	s.statLogInterval = c.StatLogInterval
+	s.maxQuietInterval = c.MaxQuietInterval
 	s.filter = Filters[c.FrameFilter]
 	if c.ExecFlag {
 		s.label = fmt.Sprintf("%v", c.Args)
@@ -72,11 +78,15 @@ func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 }
 
 func (s *Source) openInputFile() (err error) {
+	s.inputLock.Lock()
 	s.input, err = os.Open(s.path)
+	s.inputLock.Unlock()
 	return
 }
 
 func (s *Source) openInputCmd() (err error) {
+	s.inputLock.Lock()
+	defer s.inputLock.Unlock()
 	s.cmd = exec.Command(s.execArgs[0], s.execArgs[1:]...)
 	s.input, err = s.cmd.StdoutPipe()
 	if err != nil {
@@ -85,8 +95,8 @@ func (s *Source) openInputCmd() (err error) {
 	}
 	err = s.cmd.Start()
 	if err != nil {
+		s.input = nil
 		s.cmd = nil
-		return
 	}
 	return
 }
@@ -107,7 +117,11 @@ func (s *Source) openInput() (err error) {
 	header := make([]byte, s.HeaderBytes)
 	for pos := uint64(0); pos < s.HeaderBytes; {
 		var got int
-		if got, err = s.input.Read(header[pos:]); got == 0 {
+		in := s.input
+		if in == nil {
+			return ErrInputClosed
+		}
+		if got, err = in.Read(header[pos:]); got == 0 {
 			log.Printf("source %s read-header: %s", s.label, err)
 			s.closeInput()
 			return
@@ -127,6 +141,7 @@ func (s *Source) openInput() (err error) {
 }
 
 func (s *Source) closeInput() {
+	s.inputLock.Lock()
 	if s.input != nil {
 		s.input.Close()
 		s.input = nil
@@ -138,6 +153,8 @@ func (s *Source) closeInput() {
 		s.cmd.Wait()
 		s.cmd = nil
 	}
+	s.inputLock.Unlock()
+	log.Println("source", s.label, "closed")
 }
 
 func (s *Source) readNextFrame() (okFrameSize int, err error) {
@@ -146,14 +163,19 @@ func (s *Source) readNextFrame() (okFrameSize int, err error) {
 	defer s.frameLocks[bufPos].Unlock()
 	s.frames[bufPos] = s.frames[bufPos][:cap(s.frames[bufPos])]
 	for frameEnd := 0; frameEnd < int(s.frameBytes); {
+		in := s.input
 		if s.gone {
+			// Stop without using up todo.
 			return 0, io.EOF
 		} else if len(s.todo) > 0 {
 			copy(s.frames[bufPos][frameEnd:], s.todo)
 			frameEnd += len(s.todo)
 			s.todo = s.todo[:0]
+		} else if in == nil {
+			// Stop after using up todo.
+			return 0, io.EOF
 		} else {
-			got, err := s.input.Read(s.frames[bufPos][frameEnd:])
+			got, err := in.Read(s.frames[bufPos][frameEnd:])
 			if s.gone {
 				return 0, io.EOF
 			} else if got > 0 {
@@ -200,8 +222,8 @@ func (s *Source) readNextFrame() (okFrameSize int, err error) {
 }
 
 // run() reads data from the input pipe into the buffer until the
-// source reaches EOF and cannot be reopened. It then removes the
-// source from sourceMap and returns.
+// source either reaches EOF or stops producing data, and cannot be
+// reopened. It then removes the source from sourceMap and returns.
 func (s *Source) run() {
 	var err error
 	s.statLast = time.Now()
@@ -210,22 +232,45 @@ func (s *Source) run() {
 	if err := s.openInput(); err != nil {
 		return
 	}
+	defer s.closeInput()
 	var ticker *time.Ticker
 	if s.bandwidth > 0 {
 		ticker = time.NewTicker(time.Duration(uint64(time.Second) * s.frameBytes / s.bandwidth))
 	}
 	var toThrottle int // #bytes read from source but not yet throttled by ticker
-	var statTicker <-chan time.Time
 	if s.statLogInterval > 0 {
-		statTicker = (time.NewTicker(s.statLogInterval)).C
-	} else {
-		statTicker = make(chan time.Time)
+		ticker := time.NewTicker(s.statLogInterval)
+		defer ticker.Stop()
+		go func() {
+			for range ticker.C {
+				s.LogStats()
+			}
+		}()
+	}
+	if s.maxQuietInterval > 0 {
+		ticker := time.NewTicker(s.maxQuietInterval)
+		defer ticker.Stop()
+		go func() {
+			lastcount := s.statBytesIn
+			lasttime := time.Now()
+			for t := range ticker.C {
+				if lastcount == s.statBytesIn {
+					log.Printf("source %s stuck at %d bytes since %v", s.label, lastcount, lasttime)
+					s.closeInput()
+				} else {
+					lastcount = s.statBytesIn
+					lasttime = t
+				}
+			}
+		}()
 	}
 	for !s.gone {
 		var frameSize int
 		if frameSize, err = s.readNextFrame(); err != nil {
-			log.Printf("source %s read: %s", s.label, err)
-			s.closeInput()
+			if s.input != nil {
+				log.Printf("source %s read: %s", s.label, err)
+				s.closeInput()
+			}
 			if s.gone || !s.reopen {
 				// Shouldn't reopen
 				break
@@ -246,18 +291,12 @@ func (s *Source) run() {
 				toThrottle -= int(s.frameBytes)
 			}
 		}
-		select {
-		case <-statTicker:
-			s.LogStats()
-		default:
-		}
 	}
-	s.closeInput()
 }
 
 // LogStats logs data source and client statistics (bytes in, skipped, out).
 func (s *Source) LogStats() {
-	log.Printf("source %s: %d activeclients, %d inbytes, %d invalidbytes, %d outbytes", s.label, s.sinkCount, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
+	log.Printf("source %s stats: %d activeclients, %d inbytes, %d invalidbytes, %d outbytes", s.label, s.sinkCount, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
 }
 
 func (s *Source) GetHeader(buf []byte) (int, error) {
@@ -299,9 +338,6 @@ func (s *Source) Done() {
 
 // Make sure everyone waiting in Next() gives up. Prevents deadlock.
 func (s *Source) disconnectAll() {
-	if !s.gone {
-		log.Println("source", s.label, "closing")
-	}
 	s.gone = true
 	s.Broadcast()
 }
