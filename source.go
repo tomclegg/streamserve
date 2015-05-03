@@ -42,7 +42,8 @@ type Source struct {
 	statBytesInvalid uint64
 	statBytesIn      uint64
 	statBytesOut     uint64
-	startTime        time.Time
+	startTime        time.Time // source became available to clients
+	openTime         time.Time // current reader fd opened / process started
 	statLogInterval  time.Duration
 	maxQuietInterval time.Duration
 	sourceMap        *SourceMap
@@ -80,8 +81,13 @@ func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 
 func (s *Source) openInputFile() (err error) {
 	s.inputLock.Lock()
+	defer s.inputLock.Unlock()
 	s.input, err = os.Open(s.path)
-	s.inputLock.Unlock()
+	if err != nil {
+		return
+	}
+	s.openTime = time.Now()
+	log.Println("source", s.label, "opened")
 	return
 }
 
@@ -99,6 +105,8 @@ func (s *Source) openInputCmd() (err error) {
 		s.input = nil
 		s.cmd = nil
 	}
+	s.openTime = time.Now()
+	log.Println("source", s.label, "opened, pid", s.cmd.Process.Pid)
 	return
 }
 
@@ -114,7 +122,6 @@ func (s *Source) openInput() (err error) {
 		log.Printf("source %s open: %s", s.label, err)
 		return
 	}
-	log.Println("source", s.label, "opened")
 	header := make([]byte, s.HeaderBytes)
 	for pos := uint64(0); pos < s.HeaderBytes; {
 		var got int
@@ -146,17 +153,18 @@ func (s *Source) closeInput() {
 	if s.input != nil {
 		s.input.Close()
 		s.input = nil
+		log.Println("source", s.label, "closed after", time.Since(s.openTime))
 		s.LogStats()
 	}
 	if s.cmd != nil {
 		if s.cmd.Process != nil {
+			log.Println("source", s.label, "kill", s.cmd.Process.Pid)
 			s.cmd.Process.Kill()
 		}
 		s.cmd.Wait()
 		s.cmd = nil
 	}
 	s.inputLock.Unlock()
-	log.Println("source", s.label, "closed")
 }
 
 func (s *Source) readNextFrame() (okFrameSize int, err error) {
