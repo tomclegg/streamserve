@@ -46,7 +46,7 @@ Show all options:
 
 Purpose
 
-Unlike general-purpose web servers, streamserve it suitable when:
+Unlike general-purpose web servers, streamserve is suitable when:
 
 1. The process supplying the data stream is expensive. For example,
 you want to encode media on the fly and send it to 100 clients, but
@@ -120,6 +120,30 @@ actual frame sizes: If using -filter=mp3, the above example will skip
 frames when a client lags behind by 1024 mp3 frames (not 1048576
 bytes).
 
+Sources
+
+Read from a fifo.
+
+  -path /path/to/fifo
+
+Read from stdin.
+
+  -path /dev/stdin
+
+Start a child process when the first client connects.
+
+  -exec cat /dev/urandom
+
+Run a shell command in the child process.
+
+  -exec sh -c 'cat /dev/urandom | base64'
+
+HTTP headers
+
+Specify MIME type.
+
+  -content-type audio/mpeg
+
 Starting and stopping
 
 You can control streamserve's behaviour when a data source closes, and
@@ -161,6 +185,13 @@ probably be a better choice.) Speed is given in bytes per second. The
 default is to read data as fast as the input FIFO supplies it.
 
   -source-bandwidth 16000
+
+Close the input (and kill the child process, if applicable) if the
+given interval elapses without reading any data. Can be specified in
+units h, m, s, ms, us, ns. After closing, reopen or quit depending on
+-reopen (see "Starting and stopping").
+
+  -max-quiet-interval 1m
 
 */
 package main
