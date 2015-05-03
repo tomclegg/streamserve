@@ -12,11 +12,16 @@ In general:
 
 PCM audio:
 
-    streamserve -address :8800 -source-buffer 40 -frame-bytes 44100 -reopen=false -path <(arecord -f cd --file-type raw)
+    streamserve -address :44100 -source-buffer 40 -frame-bytes 44100 -reopen -close-idle=false \
+                -exec arecord -f cd --file-type raw
 
 MP3 audio:
 
-    streamserve -address 127.0.0.1:8800 -source-buffer 40 -frame-bytes 2048 -reopen=false -path <(arecord -f cd --file-type raw | lame -r -s 44.1 -b 128 - -)
+    streamserve -address 127.0.0.1:8064 -source-buffer 400 -reopen -close-idle \
+                -content-type audio/mpeg \
+                -frame-bytes 300 \
+                -frame-filter mp3 \
+                -exec sh -c 'curl -sS localhost:44100 | lame -r -h -b 64 -a -m l - -'
 
 Show all options:
 

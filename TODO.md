@@ -1,5 +1,6 @@
 # TODO
 
+* -client-stats-log-interval (incl. show skipped frames).
 * Check mp3 logical frames.
 * Refactor source frame reader to use bufio.
 * Multiple streams (pay attention to client URI). Caveat: can't exit-on-idle.
