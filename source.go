@@ -42,7 +42,7 @@ type Source struct {
 	statBytesInvalid uint64
 	statBytesIn      uint64
 	statBytesOut     uint64
-	statLast         time.Time
+	startTime        time.Time
 	statLogInterval  time.Duration
 	maxQuietInterval time.Duration
 	sourceMap        *SourceMap
@@ -50,6 +50,7 @@ type Source struct {
 
 func NewSource(path string, c *Config, sourceMap *SourceMap) (s *Source) {
 	s = &Source{}
+	s.startTime = time.Now()
 	s.path = path
 	s.sourceMap = sourceMap
 	s.Cond = sync.NewCond(s.RLocker())
@@ -145,6 +146,7 @@ func (s *Source) closeInput() {
 	if s.input != nil {
 		s.input.Close()
 		s.input = nil
+		s.LogStats()
 	}
 	if s.cmd != nil {
 		if s.cmd.Process != nil {
@@ -226,7 +228,6 @@ func (s *Source) readNextFrame() (okFrameSize int, err error) {
 // reopened. It then removes the source from sourceMap and returns.
 func (s *Source) run() {
 	var err error
-	s.statLast = time.Now()
 	defer s.LogStats()
 	defer s.Close()
 	if err := s.openInput(); err != nil {
@@ -255,7 +256,7 @@ func (s *Source) run() {
 			lasttime := time.Now()
 			for t := range ticker.C {
 				if lastcount == s.statBytesIn {
-					log.Printf("source %s stuck at %d bytes since %v", s.label, lastcount, lasttime)
+					log.Printf("source %s stuck at %d bytes for %v (since %v)", s.label, lastcount, t.Sub(lasttime), lasttime)
 					s.closeInput()
 				} else {
 					lastcount = s.statBytesIn
@@ -296,7 +297,7 @@ func (s *Source) run() {
 
 // LogStats logs data source and client statistics (bytes in, skipped, out).
 func (s *Source) LogStats() {
-	log.Printf("source %s stats: %d activeclients, %d inbytes, %d invalidbytes, %d outbytes", s.label, s.sinkCount, s.statBytesIn, s.statBytesInvalid, s.statBytesOut)
+	log.Printf("source %s stats: %d activeclients, %d inbytes, %d invalidbytes, %d outbytes, %v uptime", s.label, s.sinkCount, s.statBytesIn, s.statBytesInvalid, s.statBytesOut, time.Since(s.startTime))
 }
 
 func (s *Source) GetHeader(buf []byte) (int, error) {
