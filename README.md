@@ -2,6 +2,8 @@
 
 Efficiently distribute media streams to http clients.
 
+[![Build Status](https://drone.io/github.com/tomclegg/streamserve/status.png)](https://drone.io/github.com/tomclegg/streamserve/latest)
+
 * Release status: alpha
 * [Documentation](doc.md) (same as [at godoc.org](https://godoc.org/github.com/tomclegg/streamserve))
 * [TODO](TODO.md)
