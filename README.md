@@ -1,5 +1,7 @@
 # streamserve
 
+[![Join the chat at https://gitter.im/tomclegg/streamserve](https://badges.gitter.im/Join%20Chat.svg)](https://gitter.im/tomclegg/streamserve?utm_source=badge&utm_medium=badge&utm_campaign=pr-badge&utm_content=badge)
+
 Efficiently distribute media streams to http clients.
 
 [![Build Status](https://drone.io/github.com/tomclegg/streamserve/status.png)](https://drone.io/github.com/tomclegg/streamserve/latest)
